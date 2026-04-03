@@ -1,5 +1,6 @@
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
+
 
 class Customer(models.Model):
     full_name = models.CharField(max_length=100, verbose_name="Họ và tên")
@@ -15,94 +16,138 @@ class Customer(models.Model):
         return self.full_name
 
 
-
-
-class LoaiSan(models.Model):
-    ten_loai_san = models.CharField(max_length=100, unique=True)
-
-    class Meta:
-        verbose_name = "Loai san"
-        verbose_name_plural = "Loai san"
-
-    def __str__(self):
-        return self.ten_loai_san
-
-
-class San(models.Model):
-    ma_san = models.CharField(max_length=20, unique=True)
-    ten_san = models.CharField(max_length=100)
-    loai_san = models.ForeignKey(LoaiSan, on_delete=models.CASCADE, related_name='ds_san')
-    dang_hoat_dong = models.BooleanField(default=True)
-
-    class Meta:
-        verbose_name = "San"
-        verbose_name_plural = "San"
-
-    def __str__(self):
-        return f"{self.ma_san} - {self.ten_san}"
-
-
-class BangGia(models.Model):
-    PHAM_VI_CHOICES = [
-        ('ALL', 'Tất cả sân'),
-        ('SPECIFIC', 'Sân cụ thể'),
+class CourtType(models.Model):
+    STATUS_CHOICES = [
+        ("ACTIVE", "Đang hoạt động"),
+        ("INACTIVE", "Ngưng hoạt động"),
     ]
 
-    ma_bang_gia = models.CharField(max_length=20, unique=True)
-    ten_bang_gia = models.CharField(max_length=255)
-    loai_san = models.ForeignKey(LoaiSan, on_delete=models.CASCADE, related_name='bang_gia')
-    pham_vi_ap_dung = models.CharField(max_length=10, choices=PHAM_VI_CHOICES, default='ALL')
+    DURATION_CHOICES = [
+        (60, "60 phút"),
+        (90, "90 phút"),
+    ]
 
-    ngay_hieu_luc = models.DateField()
-    ngay_ket_thuc = models.DateField(null=True, blank=True)
+    code = models.CharField(max_length=20, unique=True, verbose_name="Mã loại sân")
+    name = models.CharField(max_length=100, unique=True, verbose_name="Tên loại sân")
+    duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Thời lượng")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="ACTIVE", verbose_name="Trạng thái")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
-    # Lưu các ngày áp dụng: ["T2", "T3", "T4", "T5", "T6"] hoặc ["T7", "CN"]
-    ngay_ap_dung = models.JSONField(default=list, blank=True)
+    def __str__(self):
+        return self.name
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
+class Court(models.Model):
+    STATUS_CHOICES = [
+        ("READY", "Sẵn sàng"),
+        ("MAINTENANCE", "Đang bảo trì"),
+        ("INACTIVE", "Ngưng hoạt động"),
+    ]
+
+    code = models.CharField(max_length=20, unique=True, verbose_name="Mã sân")
+    name = models.CharField(max_length=100, verbose_name="Tên sân")
+    court_type = models.ForeignKey(
+        CourtType,
+        on_delete=models.PROTECT,
+        related_name="courts",
+        verbose_name="Loại sân"
+    )
+    area = models.CharField(max_length=50, blank=True, null=True, verbose_name="Khu vực")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="READY", verbose_name="Trạng thái sân")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    def __str__(self):
+        return self.name
+
+
+class PriceTable(models.Model):
+    APPLY_SCOPE_CHOICES = [
+        ("ALL", "Tất cả sân"),
+        ("SPECIFIC", "Sân cụ thể"),
+    ]
+
+    price_table_code = models.CharField(max_length=20, unique=True, verbose_name="Mã bảng giá")
+    price_table_name = models.CharField(max_length=255, verbose_name="Tên bảng giá")
+    court_type = models.ForeignKey(
+        CourtType,
+        on_delete=models.CASCADE,
+        related_name="price_tables",
+        verbose_name="Loại sân"
+    )
+    apply_scope = models.CharField(
+        max_length=10,
+        choices=APPLY_SCOPE_CHOICES,
+        default="ALL",
+        verbose_name="Phạm vi áp dụng"
+    )
+
+    effective_date = models.DateField(verbose_name="Ngày hiệu lực")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Ngày kết thúc")
+
+    # Ví dụ: ["T2", "T3", "T4", "T5", "T6"] hoặc ["T7", "CN"]
+    applied_days = models.JSONField(default=list, blank=True, verbose_name="Ngày áp dụng")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
         verbose_name = "Bang gia"
         verbose_name_plural = "Bang gia"
 
     def clean(self):
-        if self.ngay_ket_thuc and self.ngay_ket_thuc < self.ngay_hieu_luc:
+        if self.end_date and self.end_date < self.effective_date:
             raise ValidationError("Ngày kết thúc phải lớn hơn hoặc bằng ngày hiệu lực.")
 
     def __str__(self):
-        return f"{self.ma_bang_gia} - {self.ten_bang_gia}"
+        return f"{self.price_table_code} - {self.price_table_name}"
 
 
-class BangGiaSanApDung(models.Model):
-    bang_gia = models.ForeignKey(BangGia, on_delete=models.CASCADE, related_name='san_ap_dung')
-    san = models.ForeignKey(San, on_delete=models.CASCADE, related_name='bang_gia_ap_dung')
+class PriceTableCourt(models.Model):
+    price_table = models.ForeignKey(
+        PriceTable,
+        on_delete=models.CASCADE,
+        related_name="applied_courts",
+        verbose_name="Bảng giá"
+    )
+    court = models.ForeignKey(
+        Court,
+        on_delete=models.CASCADE,
+        related_name="price_table_links",
+        verbose_name="Sân"
+    )
 
     class Meta:
-        unique_together = ('bang_gia', 'san')
+        unique_together = ("price_table", "court")
         verbose_name = "Bang gia san ap dung"
         verbose_name_plural = "Bang gia san ap dung"
 
     def __str__(self):
-        return f"{self.bang_gia.ma_bang_gia} - {self.san.ten_san}"
+        return f"{self.price_table.price_table_code} - {self.court.name}"
 
 
-class KhungGioBangGia(models.Model):
-    bang_gia = models.ForeignKey(BangGia, on_delete=models.CASCADE, related_name='khung_gio')
-    gio_bat_dau = models.TimeField()
-    gio_ket_thuc = models.TimeField()
-    don_gia = models.DecimalField(max_digits=12, decimal_places=0)
-    ghi_chu = models.CharField(max_length=255, blank=True, null=True)
-    thu_tu = models.PositiveIntegerField(default=1)
+class PriceTableTimeSlot(models.Model):
+    price_table = models.ForeignKey(
+        PriceTable,
+        on_delete=models.CASCADE,
+        related_name="time_slots",
+        verbose_name="Bảng giá"
+    )
+    start_time = models.TimeField(verbose_name="Giờ bắt đầu")
+    end_time = models.TimeField(verbose_name="Giờ kết thúc")
+    unit_price = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Đơn giá")
+    note = models.CharField(max_length=255, blank=True, null=True, verbose_name="Ghi chú")
+    order = models.PositiveIntegerField(default=1, verbose_name="Thứ tự")
 
     class Meta:
-        ordering = ['thu_tu', 'gio_bat_dau']
+        ordering = ["order", "start_time"]
         verbose_name = "Khung gio bang gia"
         verbose_name_plural = "Khung gio bang gia"
 
     def clean(self):
-        if self.gio_ket_thuc <= self.gio_bat_dau:
+        if self.end_time <= self.start_time:
             raise ValidationError("Giờ kết thúc phải lớn hơn giờ bắt đầu.")
 
     def __str__(self):
-        return f"{self.bang_gia.ma_bang_gia} | {self.gio_bat_dau} - {self.gio_ket_thuc}"
+        return f"{self.price_table.price_table_code} | {self.start_time} - {self.end_time}"
