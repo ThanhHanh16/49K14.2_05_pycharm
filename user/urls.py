@@ -1,20 +1,21 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import CustomerViewSet
-from rest_framework.routers import DefaultRouter
-from .views import LoaiSanViewSet, SanViewSet, BangGiaViewSet
+from .views import (
+    CustomerViewSet, CourtTypeViewSet, CourtViewSet,
+    PriceTableViewSet, PriceTableCourtViewSet,
+    PriceTableTimeSlotViewSet, BookingViewSet
+)
 
 
 router = DefaultRouter()
 router.register(r'customers', CustomerViewSet)
+router.register(r'court-types', CourtTypeViewSet)
+router.register(r'courts', CourtViewSet)
+router.register(r'price-tables', PriceTableViewSet)
+router.register(r'price-table-courts', PriceTableCourtViewSet)
+router.register(r'price-table-time-slots', PriceTableTimeSlotViewSet)
+router.register(r'bookings', BookingViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),
 ]
-
-router = DefaultRouter()
-router.register(r'loai-san', LoaiSanViewSet, basename='loai-san')
-router.register(r'san', SanViewSet, basename='san')
-router.register(r'bang-gia', BangGiaViewSet, basename='bang-gia')
-
-urlpatterns = router.urls
