@@ -151,3 +151,48 @@ class PriceTableTimeSlot(models.Model):
 
     def __str__(self):
         return f"{self.price_table.price_table_code} | {self.start_time} - {self.end_time}"
+
+
+class Booking(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Chờ xác nhận'),
+        ('confirmed', 'Đã xác nhận'),
+        ('cancelled', 'Đã hủy'),
+        ('completed', 'Đã hoàn thành'),
+    ]
+
+    court = models.ForeignKey(
+        Court,
+        on_delete=models.CASCADE,
+        related_name='bookings',
+        verbose_name="Sân"
+    )
+    customer_name = models.CharField(max_length=100, verbose_name="Tên khách hàng")
+    phone = models.CharField(max_length=20, verbose_name="Số điện thoại")
+    date = models.DateField(verbose_name="Ngày đặt")
+    start_time = models.TimeField(verbose_name="Giờ bắt đầu")
+    end_time = models.TimeField(verbose_name="Giờ kết thúc")
+    total_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        verbose_name="Trạng thái"
+    )
+    notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    class Meta:
+        verbose_name = "Dat san"
+        verbose_name_plural = "Dat san"
+        ordering = ['-date', '-created_at']
+        # Đảm bảo không trùng lặp đặt sân cùng thời gian
+        unique_together = ['court', 'date', 'start_time', 'end_time']
+
+    def clean(self):
+        if self.end_time <= self.start_time:
+            raise ValidationError("Giờ kết thúc phải lớn hơn giờ bắt đầu.")
+
+    def __str__(self):
+        return f"{self.customer_name} - {self.court.name} - {self.date} {self.start_time}-{self.end_time}"
