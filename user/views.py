@@ -1,9 +1,9 @@
+from datetime import datetime
+
+from django.db.models import Q
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from datetime import datetime, date
-from django.db.models import Q, Exists, OuterRef
-from django.utils import timezone
 
 from .models import (
     Customer, CourtType, Court, PriceTable, PriceTableCourt,
