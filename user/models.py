@@ -196,3 +196,92 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} - {self.court.name} - {self.date} {self.start_time}-{self.end_time}"
+
+
+class QLDonDat(models.Model):
+    STATUS_CHOICES = [
+        ('Chờ xác nhận', 'Chờ xác nhận'),
+        ('Đã xác nhận', 'Đã xác nhận'),
+        ('Hoàn thành', 'Hoàn thành'),
+        ('Hủy', 'Hủy'),
+    ]
+
+    PAYMENT_CHOICES = [
+        ('Đã thanh toán', 'Đã thanh toán'),
+        ('Chưa thanh toán', 'Chưa thanh toán'),
+    ]
+
+    # THÊM MỚI: liên kết với Booking
+    booking = models.OneToOneField(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name='qldon_dat',
+        null=True,
+        blank=True,
+        verbose_name="Đặt sân"
+    )
+
+    ma_don = models.CharField(max_length=20, unique=True, verbose_name="Mã đơn")
+    ten_khach_hang = models.CharField(max_length=100, verbose_name="Tên khách hàng")
+    so_dien_thoai = models.CharField(max_length=20, verbose_name="Số điện thoại")
+    gio_bat_dau = models.TimeField(verbose_name="Giờ bắt đầu")
+    gio_ket_thuc = models.TimeField(verbose_name="Giờ kết thúc")
+    loai_san = models.CharField(max_length=100, verbose_name="Loại sân")
+    san_ap_dung = models.CharField(max_length=100, verbose_name="Sân áp dụng")
+    ngay_dat = models.DateField(verbose_name="Ngày đặt")
+    tong_tien = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Tổng tiền")
+    trang_thai_don = models.CharField(
+        max_length=50,
+        choices=STATUS_CHOICES,
+        default='Chờ xác nhận',
+        verbose_name="Trạng thái đơn"
+    )
+    thanh_toan = models.CharField(
+        max_length=50,
+        choices=PAYMENT_CHOICES,
+        default='Chưa thanh toán',
+        verbose_name="Thanh toán"
+    )
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    class Meta:
+        verbose_name = "Quản lý đơn đặt"
+        verbose_name_plural = "Quản lý đơn đặt"
+        ordering = ['-created_at']
+
+    def save(self, *args, **kwargs):
+        # Nếu đã chọn booking thì tự đổ dữ liệu từ booking sang đơn đặt
+        if self.booking:
+            self.ten_khach_hang = self.booking.customer_name
+            self.so_dien_thoai = self.booking.phone
+            self.gio_bat_dau = self.booking.start_time
+            self.gio_ket_thuc = self.booking.end_time
+            self.ngay_dat = self.booking.date
+            self.tong_tien = self.booking.total_price or 0
+            self.ghi_chu = self.booking.notes
+
+            if self.booking.court:
+                self.san_ap_dung = self.booking.court.name
+                if self.booking.court.court_type:
+                    self.loai_san = self.booking.court.court_type.name
+
+            # Nếu chưa có mã đơn thì tự sinh mã đơn
+            if not self.ma_don:
+                count = QLDonDat.objects.count() + 1
+                self.ma_don = f"DD{count:05d}"
+
+            # Đồng bộ trạng thái đơn theo trạng thái booking
+            status_map = {
+                'pending': 'Chờ xác nhận',
+                'confirmed': 'Đã xác nhận',
+                'completed': 'Hoàn thành',
+                'cancelled': 'Hủy',
+            }
+            self.trang_thai_don = status_map.get(self.booking.status, 'Chờ xác nhận')
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.ma_don} - {self.ten_khach_hang}"
