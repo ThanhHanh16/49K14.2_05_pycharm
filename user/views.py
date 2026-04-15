@@ -7,13 +7,13 @@ from rest_framework.response import Response
 
 from .models import (
     Customer, CourtType, Court, PriceTable, PriceTableCourt,
-    PriceTableTimeSlot, Booking
+    PriceTableTimeSlot, Booking, QLDonDat
 )
 from .serializers import (
     CustomerSerializer, CourtTypeSerializer, CourtSerializer,
     PriceTableSerializer, PriceTableCourtSerializer,
     PriceTableTimeSlotSerializer, BookingSerializer,
-    CourtScheduleResponseSerializer
+    CourtScheduleResponseSerializer, QLDonDatSerializer
 )
 
 
@@ -332,3 +332,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         """Convert date to day of week string (T2, T3, ..., CN)"""
         days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
         return days[date_obj.weekday()]
+
+
+class QLDonDatViewSet(viewsets.ModelViewSet):
+    queryset = QLDonDat.objects.all().order_by('-created_at')
+    serializer_class = QLDonDatSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['ma_don', 'ten_khach_hang', 'so_dien_thoai']
+    ordering_fields = ['ngay_dat', 'created_at', 'trang_thai_don']

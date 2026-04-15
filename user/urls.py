@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CustomerViewSet, CourtTypeViewSet, CourtViewSet,
     PriceTableViewSet, PriceTableCourtViewSet,
-    PriceTableTimeSlotViewSet, BookingViewSet
+    PriceTableTimeSlotViewSet, BookingViewSet, QLDonDatViewSet
 )
 
 
@@ -15,6 +15,7 @@ router.register(r'price-tables', PriceTableViewSet)
 router.register(r'price-table-courts', PriceTableCourtViewSet)
 router.register(r'price-table-time-slots', PriceTableTimeSlotViewSet)
 router.register(r'bookings', BookingViewSet)
+router.register(r'ql-don-dat', QLDonDatViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),

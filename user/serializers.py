@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     Customer, CourtType, Court, PriceTable, PriceTableCourt,
-    PriceTableTimeSlot, Booking
+    PriceTableTimeSlot, Booking, QLDonDat
 )
 
 
@@ -133,3 +133,9 @@ class CourtScheduleResponseSerializer(serializers.Serializer):
     court_type_id = serializers.IntegerField()
     court_type_name = serializers.CharField()
     data = CourtScheduleSerializer(many=True)
+
+
+class QLDonDatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QLDonDat
+        fields = '__all__'
