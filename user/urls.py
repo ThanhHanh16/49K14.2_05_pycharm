@@ -17,5 +17,5 @@ router.register(r'price-table-time-slots', PriceTableTimeSlotViewSet)
 router.register(r'bookings', BookingViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ]
