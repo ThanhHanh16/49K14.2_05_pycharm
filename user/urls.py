@@ -18,5 +18,5 @@ router.register(r'bookings', BookingViewSet)
 router.register(r'ql-don-dat', QLDonDatViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ]
