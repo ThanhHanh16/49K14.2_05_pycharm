@@ -15,9 +15,9 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(CourtType)
 class CourtTypeAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'duration', 'status', 'created_at')
+    list_display = ('code', 'name', 'status', 'created_at')
     search_fields = ('code', 'name')
-    list_filter = ('status', 'duration')
+    list_filter = ('status',)
     ordering = ('name',)
 
 

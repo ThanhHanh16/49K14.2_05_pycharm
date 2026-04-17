@@ -19,6 +19,9 @@ class CourtTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = CourtType
         fields = '__all__'
+        extra_kwargs = {
+            'code': {'required': False}
+        }
 
 
 class CourtSerializer(serializers.ModelSerializer):
@@ -37,6 +40,9 @@ class CourtSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+        extra_kwargs = {
+            'code': {'required': False}
+        }
 
 
 class PriceTableSerializer(serializers.ModelSerializer):

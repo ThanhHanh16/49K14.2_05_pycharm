@@ -101,7 +101,6 @@ class CourtViewSet(viewsets.ModelViewSet):
 
             # Get time slots for this price table
             time_slots = PriceTableTimeSlot.objects.filter(
-                price_table=price_table
             ).order_by('order', 'start_time')
 
             slots_data = []
@@ -260,8 +259,17 @@ class BookingViewSet(viewsets.ModelViewSet):
         try:
             court = Court.objects.get(id=court_id)
             booking_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            start_time = datetime.strptime(start_time_str, '%H:%M').time()
-            end_time = datetime.strptime(end_time_str, '%H:%M').time()
+            
+            # Linh hoạt xử lý HH:MM hoặc HH:MM:SS
+            try:
+                start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
+            except ValueError:
+                start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                
+            try:
+                end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
+            except ValueError:
+                end_time = datetime.strptime(end_time_str, '%H:%M').time()
         except (Court.DoesNotExist, ValueError) as e:
             return Response(
                 {'error': str(e)},

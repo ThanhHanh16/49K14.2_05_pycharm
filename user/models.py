@@ -23,17 +23,17 @@ class CourtType(models.Model):
         ("INACTIVE", "Ngưng hoạt động"),
     ]
 
-    DURATION_CHOICES = [
-        (60, "60 phút"),
-        (90, "90 phút"),
-    ]
-
-    code = models.CharField(max_length=20, unique=True, verbose_name="Mã loại sân")
+    code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã loại sân")
     name = models.CharField(max_length=100, unique=True, verbose_name="Tên loại sân")
-    duration = models.IntegerField(choices=DURATION_CHOICES, verbose_name="Thời lượng")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="ACTIVE", verbose_name="Trạng thái")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            count = CourtType.objects.count() + 1
+            self.code = f"CT{count:03d}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -46,7 +46,7 @@ class Court(models.Model):
         ("INACTIVE", "Ngưng hoạt động"),
     ]
 
-    code = models.CharField(max_length=20, unique=True, verbose_name="Mã sân")
+    code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã sân")
     name = models.CharField(max_length=100, verbose_name="Tên sân")
     court_type = models.ForeignKey(
         CourtType,
@@ -58,6 +58,12 @@ class Court(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="READY", verbose_name="Trạng thái sân")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            count = Court.objects.count() + 1
+            self.code = f"SAN{count:03d}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
