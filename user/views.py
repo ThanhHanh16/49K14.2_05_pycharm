@@ -146,10 +146,10 @@ class CourtViewSet(viewsets.ModelViewSet):
             effective_date__lte=booking_date
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
-        ).filter(
-            Q(applied_days__isnull=True) |
-            Q(applied_days__icontains=day_of_week) |
-            Q(applied_days__len=0)
+        # ).filter(
+        #     Q(applied_days__isnull=True) |
+        #     Q(applied_days__icontains=day_of_week) |
+        #     Q(applied_days__len=0)
         ).order_by('-effective_date')
 
         return price_tables.first()
@@ -223,7 +223,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             "notes": "Optional notes"
         }
         """
-        court_id = request.data.get('court_id')
+        court_id = request.data.get('court_id') or request.data.get('court')
         customer_name = request.data.get('customer_name')
         phone = request.data.get('phone')
         date_str = request.data.get('date')
@@ -231,9 +231,25 @@ class BookingViewSet(viewsets.ModelViewSet):
         end_time_str = request.data.get('end_time')
         notes = request.data.get('notes', '')
 
-        # Validate required fields
-        required_fields = ['court_id', 'customer_name', 'phone', 'date', 'start_time', 'end_time']
-        missing_fields = [field for field in required_fields if not request.data.get(field)]
+        missing_fields = []
+        if not court_id:
+            missing_fields.append('court_id')
+        if not customer_name:
+            missing_fields.append('customer_name')
+        if not phone:
+            missing_fields.append('phone')
+        if not date_str:
+            missing_fields.append('date')
+        if not start_time_str:
+            missing_fields.append('start_time')
+        if not end_time_str:
+            missing_fields.append('end_time')
+
+        if missing_fields:
+            return Response(
+                {'error': f'Missing required fields: {", ".join(missing_fields)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if missing_fields:
             return Response(
@@ -305,7 +321,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             notes=notes,
             status='pending'
         )
-
+        QLDonDat.objects.create(
+        booking=booking,
+        ma_don="")
         serializer = BookingSerializer(booking)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -320,17 +338,17 @@ class BookingViewSet(viewsets.ModelViewSet):
             effective_date__lte=booking_date
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
-        ).filter(
-            Q(applied_days__isnull=True) |
-            Q(applied_days__icontains=day_of_week) |
-            Q(applied_days__len=0)
+        # ).filter(
+        #     Q(applied_days__isnull=True) |
+        #     Q(applied_days__icontains=day_of_week) |
+        #     Q(applied_days__len=0)
         ).order_by('-effective_date')
 
         return price_tables.first()
 
     def _get_day_of_week(self, date_obj):
         """Convert date to day of week string (T2, T3, ..., CN)"""
-        days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+        days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
         return days[date_obj.weekday()]
 
 
