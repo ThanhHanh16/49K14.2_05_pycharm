@@ -7,9 +7,12 @@ from .models import (
 
 
 class CustomerSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='full_name')
+    phone = serializers.CharField(source='phone_number')
+
     class Meta:
         model = Customer
-        fields = '__all__'
+        fields = ['id', 'name', 'phone', 'email', 'notes', 'created_at']
 
 
 class CourtTypeSerializer(serializers.ModelSerializer):
