@@ -15,7 +15,7 @@ router.register(r'price-tables', PriceTableViewSet)
 router.register(r'price-table-courts', PriceTableCourtViewSet)
 router.register(r'price-table-time-slots', PriceTableTimeSlotViewSet)
 router.register(r'bookings', BookingViewSet)
-router.register(r'ql-don-dat', QLDonDatViewSet)
+router.register(r'QL_DonDat', QLDonDatViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
