@@ -75,7 +75,7 @@ class PriceTable(models.Model):
         ("SPECIFIC", "Sân cụ thể"),
     ]
 
-    price_table_code = models.CharField(max_length=20, unique=True, verbose_name="Mã bảng giá")
+    price_table_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã bảng giá")
     price_table_name = models.CharField(max_length=255, verbose_name="Tên bảng giá")
     court_type = models.ForeignKey(
         CourtType,
@@ -106,6 +106,12 @@ class PriceTable(models.Model):
     def clean(self):
         if self.end_date and self.end_date < self.effective_date:
             raise ValidationError("Ngày kết thúc phải lớn hơn hoặc bằng ngày hiệu lực.")
+
+    def save(self, *args, **kwargs):
+        if not self.price_table_code:
+            count = PriceTable.objects.count() + 1
+            self.price_table_code = f"BG{count:03d}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.price_table_code} - {self.price_table_name}"
@@ -228,7 +234,7 @@ class QLDonDat(models.Model):
         verbose_name="Đặt sân"
     )
 
-    ma_don = models.CharField(max_length=20, unique=True, verbose_name="Mã đơn")
+    booking_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã đơn đặt")
     ten_khach_hang = models.CharField(max_length=100, verbose_name="Tên khách hàng")
     so_dien_thoai = models.CharField(max_length=20, verbose_name="Số điện thoại")
     gio_bat_dau = models.TimeField(verbose_name="Giờ bắt đầu")

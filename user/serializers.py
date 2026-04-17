@@ -63,6 +63,9 @@ class PriceTableSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+        extra_kwargs = {
+            'price_table_code': {'required': False}
+        }
 
 
 class PriceTableCourtSerializer(serializers.ModelSerializer):
