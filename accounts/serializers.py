@@ -55,12 +55,16 @@ class RegisterSerializer(serializers.Serializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    username_or_email = serializers.CharField()
+    username_or_email = serializers.CharField(required=False)
+    username = serializers.CharField(required=False)
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        username_or_email = attrs.get("username_or_email")
+        username_or_email = attrs.get("username_or_email") or attrs.get("username")
         password = attrs.get("password")
+        
+        if not username_or_email:
+            raise serializers.ValidationError("Vui long nhap username hoac email.")
 
         user = None
 
@@ -110,4 +114,3 @@ class ProfileSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("So dien thoai da ton tai.")
         return value
-
