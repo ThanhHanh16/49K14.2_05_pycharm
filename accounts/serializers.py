@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.models import Group
 from django.db import transaction
 from rest_framework import serializers
 
@@ -37,6 +38,10 @@ class RegisterSerializer(serializers.Serializer):
         address = validated_data.pop("address", "")
 
         user = User.objects.create_user(**validated_data)
+
+        # Thêm user vào group 'customer' nếu có
+        group, _ = Group.objects.get_or_create(name="customer")
+        user.groups.add(group)
 
         # Signal may already create profile; update it with mobile registration data.
         profile, _ = CustomerProfile.objects.get_or_create(user=user)

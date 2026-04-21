@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AdminOnlyAPIView,
+    CustomerOnlyAPIView,
     LoginAPIView,
     ProfileAPIView,
     ProfileUpdateAPIView,
@@ -14,4 +15,5 @@ urlpatterns = [
     path("profile/", ProfileAPIView.as_view(), name="profile"),
     path("profile/update/", ProfileUpdateAPIView.as_view(), name="profile-update"),
     path("admin-only/", AdminOnlyAPIView.as_view(), name="admin-only"),
+    path("customer-only/", CustomerOnlyAPIView.as_view(), name="customer-only"),
 ]

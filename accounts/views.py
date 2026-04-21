@@ -4,7 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .permissions import IsStaffOrAdmin
+from .permissions import IsStaffOrAdmin, IsCustomer
 from .serializers import LoginSerializer, ProfileSerializer, RegisterSerializer
 from .models import CustomerProfile
 
@@ -49,7 +49,7 @@ class LoginAPIView(APIView):
 
 
 class ProfileAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request):
         profile, _ = CustomerProfile.objects.get_or_create(user=request.user)
@@ -57,7 +57,7 @@ class ProfileAPIView(APIView):
 
 
 class ProfileUpdateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def put(self, request):
         profile, _ = CustomerProfile.objects.get_or_create(user=request.user)
@@ -80,3 +80,9 @@ class AdminOnlyAPIView(APIView):
     def get(self, request):
         return Response({'detail': 'Ban co quyen truy cap.'})
 
+
+class CustomerOnlyAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request):
+        return Response({'detail': 'Ban la khach hang.'})

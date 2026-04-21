@@ -4,7 +4,9 @@ from django.db.models import Q
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
+from accounts.permissions import IsCustomer, IsStaffOrAdmin
 from .models import (
     Customer, CourtType, Court, PriceTable, PriceTableCourt,
     PriceTableTimeSlot, Booking, QLDonDat
@@ -15,6 +17,22 @@ from .serializers import (
     PriceTableTimeSlotSerializer, BookingSerializer,
     CourtScheduleResponseSerializer, QLDonDatSerializer
 )
+from rest_framework.permissions import BasePermission, SAFE_METHODS
+
+
+class IsStaffOrAdminOrReadOnly(BasePermission):
+    """
+    The request is authenticated as a user, or is a read-only request.
+    """
+
+    def has_permission(self, request, view):
+        return bool(
+            request.method in SAFE_METHODS or
+            request.user and
+            request.user.is_authenticated and (
+                request.user.is_staff or request.user.is_superuser
+            )
+        )
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -22,6 +40,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['full_name', 'phone_number']
+    permission_classes = [IsStaffOrAdmin]
 
 
 class CourtTypeViewSet(viewsets.ModelViewSet):
@@ -29,6 +48,7 @@ class CourtTypeViewSet(viewsets.ModelViewSet):
     serializer_class = CourtTypeSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'code']
+    permission_classes = [IsStaffOrAdminOrReadOnly]
 
 
 class CourtViewSet(viewsets.ModelViewSet):
@@ -37,6 +57,7 @@ class CourtViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code']
     ordering_fields = ['name', 'created_at']
+    permission_classes = [IsStaffOrAdminOrReadOnly]
 
     @action(detail=False, methods=['get'])
     def schedule(self, request):
@@ -184,6 +205,7 @@ class PriceTableViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['price_table_code', 'price_table_name']
     ordering_fields = ['effective_date', 'created_at']
+    permission_classes = [IsStaffOrAdmin]
 
 
 class PriceTableCourtViewSet(viewsets.ModelViewSet):
@@ -191,6 +213,7 @@ class PriceTableCourtViewSet(viewsets.ModelViewSet):
     serializer_class = PriceTableCourtSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['price_table__price_table_code', 'court__name']
+    permission_classes = [IsStaffOrAdmin]
 
 
 class PriceTableTimeSlotViewSet(viewsets.ModelViewSet):
@@ -198,6 +221,7 @@ class PriceTableTimeSlotViewSet(viewsets.ModelViewSet):
     serializer_class = PriceTableTimeSlotSerializer
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['order', 'start_time']
+    permission_classes = [IsStaffOrAdmin]
 
 
 class BookingViewSet(viewsets.ModelViewSet):
@@ -206,6 +230,13 @@ class BookingViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['customer_name', 'phone', 'court__name']
     ordering_fields = ['date', 'created_at', 'status']
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return Booking.objects.all().order_by('-date', '-created_at')
+        return Booking.objects.filter(user=user).order_by('-date', '-created_at')
 
     @action(detail=False, methods=['post'])
     def create_booking(self, request):
@@ -214,8 +245,6 @@ class BookingViewSet(viewsets.ModelViewSet):
         Request body:
         {
             "court_id": 1,
-            "customer_name": "Nguyễn Văn A",
-            "phone": "0900000001",
             "date": "2026-04-03",
             "start_time": "07:00",
             "end_time": "08:00",
@@ -223,8 +252,6 @@ class BookingViewSet(viewsets.ModelViewSet):
         }
         """
         court_id = request.data.get('court_id') or request.data.get('court')
-        customer_name = request.data.get('customer_name')
-        phone = request.data.get('phone')
         date_str = request.data.get('date')
         start_time_str = request.data.get('start_time')
         end_time_str = request.data.get('end_time')
@@ -233,22 +260,12 @@ class BookingViewSet(viewsets.ModelViewSet):
         missing_fields = []
         if not court_id:
             missing_fields.append('court_id')
-        if not customer_name:
-            missing_fields.append('customer_name')
-        if not phone:
-            missing_fields.append('phone')
         if not date_str:
             missing_fields.append('date')
         if not start_time_str:
             missing_fields.append('start_time')
         if not end_time_str:
             missing_fields.append('end_time')
-
-        if missing_fields:
-            return Response(
-                {'error': f'Missing required fields: {", ".join(missing_fields)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         if missing_fields:
             return Response(
@@ -319,9 +336,10 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         # Create booking
         booking = Booking.objects.create(
+            user=request.user,
             court=court,
-            customer_name=customer_name,
-            phone=phone,
+            customer_name=request.user.get_full_name() or request.user.username,
+            phone=request.user.customer_profile.phone,
             date=booking_date,
             start_time=start_time,
             end_time=end_time,
@@ -366,3 +384,4 @@ class QLDonDatViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['ma_don', 'ten_khach_hang', 'so_dien_thoai']
     ordering_fields = ['ngay_dat', 'created_at', 'trang_thai_don']
+    permission_classes = [IsStaffOrAdmin]
