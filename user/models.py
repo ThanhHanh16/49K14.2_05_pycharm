@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.conf import settings
 
 
 class Customer(models.Model):
@@ -174,14 +175,22 @@ class Booking(models.Model):
         ('completed', 'Đã hoàn thành'),
     ]
 
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='bookings',
+        null=True,
+        blank=True,
+        verbose_name="Người dùng"
+    )
     court = models.ForeignKey(
         Court,
         on_delete=models.CASCADE,
         related_name='bookings',
         verbose_name="Sân"
     )
-    customer_name = models.CharField(max_length=100, verbose_name="Tên khách hàng")
-    phone = models.CharField(max_length=20, verbose_name="Số điện thoại")
+    customer_name = models.CharField(max_length=100, verbose_name="Tên khách hàng", null=True, blank=True)
+    phone = models.CharField(max_length=20, verbose_name="Số điện thoại", null=True, blank=True)
     date = models.DateField(verbose_name="Ngày đặt")
     start_time = models.TimeField(verbose_name="Giờ bắt đầu")
     end_time = models.TimeField(verbose_name="Giờ kết thúc")

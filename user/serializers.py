@@ -101,11 +101,13 @@ class BookingSerializer(serializers.ModelSerializer):
     court_name = serializers.CharField(source='court.name', read_only=True)
     court_code = serializers.CharField(source='court.code', read_only=True)
     total_price = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Booking
         fields = [
             'id',
+            'user',
             'court',
             'court_name',
             'court_code',
