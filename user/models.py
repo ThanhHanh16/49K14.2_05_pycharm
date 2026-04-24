@@ -43,8 +43,12 @@ class CourtType(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.code:
-            count = CourtType.objects.count() + 1
-            self.code = f"CT{count:03d}"
+            last_court_type = CourtType.objects.all().order_by('id').last()
+            if not last_court_type:
+                new_id = 1
+            else:
+                new_id = last_court_type.id + 1
+            self.code = f"LOAISAN{new_id:03d}"
         super().save(*args, **kwargs)
 
     def __str__(self):
