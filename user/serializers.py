@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from django.db import models
+from django.db.models import Q
 from .models import (
     Customer, CourtType, Court, PriceTable, PriceTableCourt,
     PriceTableTimeSlot, Booking, QLDonDat
@@ -62,31 +64,6 @@ class CourtSerializer(serializers.ModelSerializer):
         }
 
 
-class PriceTableSerializer(serializers.ModelSerializer):
-    court_type_name = serializers.CharField(source='court_type.name', read_only=True)
-    court_type_code = serializers.CharField(source='court_type.code', read_only=True)
-
-    class Meta:
-        model = PriceTable
-        fields = [
-            'id',
-            'price_table_code',
-            'price_table_name',
-            'court_type',
-            'court_type_name',
-            'court_type_code',
-            'apply_scope',
-            'effective_date',
-            'end_date',
-            'applied_days',
-            'created_at',
-            'updated_at',
-        ]
-        extra_kwargs = {
-            'price_table_code': {'required': False}
-        }
-
-
 class PriceTableCourtSerializer(serializers.ModelSerializer):
     court_name = serializers.CharField(source='court.name', read_only=True)
     court_code = serializers.CharField(source='court.code', read_only=True)
@@ -103,6 +80,8 @@ class PriceTableCourtSerializer(serializers.ModelSerializer):
 
 
 class PriceTableTimeSlotSerializer(serializers.ModelSerializer):
+    unit_price = serializers.FloatField()
+
     class Meta:
         model = PriceTableTimeSlot
         fields = [
@@ -114,6 +93,156 @@ class PriceTableTimeSlotSerializer(serializers.ModelSerializer):
             'note',
             'order',
         ]
+        extra_kwargs = {
+            'price_table': {'required': False}
+        }
+
+
+class PriceTableSerializer(serializers.ModelSerializer):
+    court_type_name = serializers.CharField(source='court_type.name', read_only=True)
+    court_type_code = serializers.CharField(source='court_type.code', read_only=True)
+    time_slots = PriceTableTimeSlotSerializer(many=True, required=False)
+    applied_courts = PriceTableCourtSerializer(many=True, read_only=True)
+    is_all_courts = serializers.BooleanField(write_only=True, required=False)
+    expiry_date = serializers.DateField(write_only=True, required=False)
+    court_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    created_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
+    updated_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
+
+    class Meta:
+        model = PriceTable
+        fields = [
+            'id',
+            'price_table_code',
+            'price_table_name',
+            'court_type',
+            'court_type_name',
+            'court_type_code',
+            'apply_scope',
+            'is_all_courts',
+            'court_ids',
+            'effective_date',
+            'end_date',
+            'expiry_date',
+            'applied_days',
+            'time_slots',
+            'applied_courts',
+            'created_at',
+            'updated_at',
+        ]
+        extra_kwargs = {
+            'price_table_code': {'required': False}
+        }
+
+    def validate(self, data):
+        # Handle mapping for mapping-friendly fields from Android
+        is_all_courts = data.get('is_all_courts')
+        if is_all_courts is not None:
+            data['apply_scope'] = 'ALL' if is_all_courts else 'SPECIFIC'
+            
+        expiry_date = data.get('expiry_date')
+        if expiry_date:
+            data['end_date'] = expiry_date
+
+        court_type = data.get('court_type')
+        apply_scope = data.get('apply_scope', 'ALL')
+        effective_date = data.get('effective_date')
+        end_date = data.get('end_date')
+        applied_days = data.get('applied_days', [])
+        court_ids = data.get('court_ids', [])
+        
+        instance_id = self.instance.id if self.instance else None
+        
+        # Check for overlaps that CANNOT be auto-closed
+        # (Overlaps where both have fixed ranges that conflict)
+        overlaps = PriceTable.objects.filter(court_type=court_type)
+        if instance_id:
+            overlaps = overlaps.exclude(id=instance_id)
+            
+        date_q = Q(effective_date__lte=end_date) if end_date else Q()
+        date_q &= Q(end_date__gte=effective_date) & Q(end_date__isnull=False)
+        
+        # We only block if the existing one HAS an end_date that conflicts with us
+        # and we can't easily auto-close it.
+        # Actually, let's keep it simple: any overlap with a FIXED-end-date table is a block.
+        # Overlap with an OPEN-ended table is allowed (it will be auto-closed in create).
+        hard_overlaps = overlaps.filter(date_q)
+        
+        final_hard_overlaps = []
+        for pt in hard_overlaps:
+            if set(applied_days) & set(pt.applied_days):
+                if apply_scope == 'ALL' or pt.apply_scope == 'ALL':
+                    final_hard_overlaps.append(pt)
+                else:
+                    pt_court_ids = set(pt.applied_courts.values_list('court_id', flat=True))
+                    if set(court_ids) & pt_court_ids:
+                        final_hard_overlaps.append(pt)
+        
+        if final_hard_overlaps:
+            conflicting_names = ", ".join([pt.price_table_name for pt in final_hard_overlaps])
+            raise serializers.ValidationError(
+                f"Bảng giá này bị trùng lặp với các bảng giá có thời hạn cố định: {conflicting_names}. Hãy điều chỉnh lại ngày."
+            )
+            
+        return data
+
+    def create(self, validated_data):
+        from datetime import timedelta
+        
+        time_slots_data = validated_data.pop('time_slots', [])
+        is_all_courts = validated_data.pop('is_all_courts', None)
+        expiry_date = validated_data.pop('expiry_date', None)
+        court_ids = validated_data.pop('court_ids', [])
+        
+        if is_all_courts is not None:
+            validated_data['apply_scope'] = 'ALL' if is_all_courts else 'SPECIFIC'
+            
+        if expiry_date:
+            validated_data['end_date'] = expiry_date
+            
+        effective_date = validated_data.get('effective_date')
+        court_type = validated_data.get('court_type')
+        apply_scope = validated_data.get('apply_scope')
+        applied_days = validated_data.get('applied_days', [])
+
+        # Auto-close old price tables
+        # Find price tables of the same type that are "open-ended" or end after new start
+        old_tables = PriceTable.objects.filter(
+            court_type=court_type,
+            effective_date__lt=effective_date
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=effective_date)
+        )
+        
+        day_before = effective_date - timedelta(days=1)
+        
+        for pt in old_tables:
+            # Check for day and scope overlap
+            if set(applied_days) & set(pt.applied_days):
+                should_close = False
+                if apply_scope == 'ALL' or pt.apply_scope == 'ALL':
+                    should_close = True
+                else:
+                    pt_court_ids = set(pt.applied_courts.values_list('court_id', flat=True))
+                    if set(court_ids) & pt_court_ids:
+                        should_close = True
+                
+                if should_close:
+                    pt.end_date = day_before
+                    pt.save()
+
+        price_table = PriceTable.objects.create(**validated_data)
+        
+        # Create time slots
+        for slot_data in time_slots_data:
+            PriceTableTimeSlot.objects.create(price_table=price_table, **slot_data)
+            
+        # Create applied courts if scope is SPECIFIC
+        if validated_data.get('apply_scope') == 'SPECIFIC':
+            for court_id in court_ids:
+                PriceTableCourt.objects.create(price_table=price_table, court_id=court_id)
+            
+        return price_table
 
 
 class BookingSerializer(serializers.ModelSerializer):
