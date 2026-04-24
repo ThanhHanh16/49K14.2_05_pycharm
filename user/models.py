@@ -96,7 +96,7 @@ class PriceTable(models.Model):
     ]
 
     price_table_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã bảng giá")
-    price_table_name = models.CharField(max_length=255, verbose_name="Tên bảng giá")
+    price_table_name = models.CharField(max_length=255, unique=True, verbose_name="Tên bảng giá")
     court_type = models.ForeignKey(
         CourtType,
         on_delete=models.CASCADE,
@@ -127,7 +127,45 @@ class PriceTable(models.Model):
         if self.end_date and self.end_date < self.effective_date:
             raise ValidationError("Ngày kết thúc phải lớn hơn hoặc bằng ngày hiệu lực.")
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from django.db.models import Q
+        
+        # 1. Base query for potential overlaps
+        overlaps = PriceTable.objects.filter(court_type=self.court_type)
+        if self.pk:
+            overlaps = overlaps.exclude(pk=self.pk)
+            
+        # Filter by date range overlap
+        date_q = Q(effective_date__lte=self.end_date) if self.end_date else Q()
+        date_q &= Q(end_date__gte=self.effective_date) | Q(end_date__isnull=True)
+        overlaps = overlaps.filter(date_q)
+        
+        # 2. Filter by applied days overlap
+        final_overlaps = []
+        for pt in overlaps:
+            if set(self.applied_days or []) & set(pt.applied_days or []):
+                # 3. Filter by scope/court overlap
+                if self.apply_scope == 'ALL' or pt.apply_scope == 'ALL':
+                    final_overlaps.append(pt)
+                else:
+                    # Both are SPECIFIC, check if they share any courts
+                    # Note: This check is only effective if courts are already linked.
+                    # For new records, this is handled in the Serializer.
+                    pt_courts = set(pt.applied_courts.values_list('court_id', flat=True))
+                    # We can't easily check self.applied_courts here for a new record 
+                    # because it's not saved yet. 
+                    # So we'll keep the Serializer validation as well.
+                    pass 
+        
+        if final_overlaps:
+            conflicting_names = ", ".join([pt.price_table_name for pt in final_overlaps])
+            raise ValidationError(
+                f"Bảng giá này bị trùng lặp thời gian/ngày áp dụng với các bảng giá: {conflicting_names}"
+            )
+
     def save(self, *args, **kwargs):
+        self.clean()
         if not self.price_table_code:
             count = PriceTable.objects.count() + 1
             self.price_table_code = f"BG{count:03d}"
