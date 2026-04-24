@@ -90,6 +90,7 @@ class LoginSerializer(serializers.Serializer):
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    role = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerProfile
@@ -105,6 +106,13 @@ class ProfileSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "username", "email", "role", "created_at", "updated_at"]
+
+    def get_role(self, obj):
+        if obj.user.is_superuser:
+            return "admin"
+        if obj.user.is_staff:
+            return "staff"
+        return obj.role
 
     def validate_phone(self, value):
         profile_id = self.instance.id if self.instance else None

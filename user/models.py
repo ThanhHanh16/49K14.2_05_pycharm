@@ -4,6 +4,7 @@ from django.conf import settings
 
 
 class Customer(models.Model):
+    customer_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã khách hàng")
     full_name = models.CharField(max_length=100, verbose_name="Họ và tên")
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="Số điện thoại")
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
@@ -14,8 +15,18 @@ class Customer(models.Model):
         verbose_name = "Khach hang"
         verbose_name_plural = "Khach hang"
 
+    def save(self, *args, **kwargs):
+        if not self.customer_code:
+            last_customer = Customer.objects.all().order_by('id').last()
+            if not last_customer:
+                new_id = 1
+            else:
+                new_id = last_customer.id + 1
+            self.customer_code = f"KH{new_id:07d}"
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return self.full_name
+        return f"{self.customer_code} - {self.full_name}"
 
 
 class CourtType(models.Model):
@@ -290,9 +301,9 @@ class QLDonDat(models.Model):
                     self.loai_san = self.booking.court.court_type.name
 
             # Nếu chưa có mã đơn thì tự sinh mã đơn
-            if not self.ma_don:
+            if not self.booking_code:
                 count = QLDonDat.objects.count() + 1
-                self.ma_don = f"DD{count:05d}"
+                self.booking_code = f"DD{count:05d}"
 
             # Đồng bộ trạng thái đơn theo trạng thái booking
             status_map = {
