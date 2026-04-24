@@ -41,6 +41,7 @@ class CourtTypeSerializer(serializers.ModelSerializer):
 
 class CourtSerializer(serializers.ModelSerializer):
     court_type_name = serializers.CharField(source='court_type.name', read_only=True)
+    court_type_code = serializers.CharField(source='court_type.code', read_only=True)
 
     class Meta:
         model = Court
@@ -50,6 +51,7 @@ class CourtSerializer(serializers.ModelSerializer):
             'name',
             'court_type',
             'court_type_name',
+            'court_type_code',
             'area',
             'status',
             'created_at',
@@ -62,6 +64,7 @@ class CourtSerializer(serializers.ModelSerializer):
 
 class PriceTableSerializer(serializers.ModelSerializer):
     court_type_name = serializers.CharField(source='court_type.name', read_only=True)
+    court_type_code = serializers.CharField(source='court_type.code', read_only=True)
 
     class Meta:
         model = PriceTable
@@ -71,6 +74,7 @@ class PriceTableSerializer(serializers.ModelSerializer):
             'price_table_name',
             'court_type',
             'court_type_name',
+            'court_type_code',
             'apply_scope',
             'effective_date',
             'end_date',
@@ -161,6 +165,7 @@ class CourtScheduleResponseSerializer(serializers.Serializer):
     date = serializers.DateField()
     court_type_id = serializers.IntegerField()
     court_type_name = serializers.CharField()
+    court_type_code = serializers.CharField()
     data = CourtScheduleSerializer(many=True)
 
 

@@ -44,7 +44,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 
 class CourtTypeViewSet(viewsets.ModelViewSet):
-    queryset = CourtType.objects.filter(status='ACTIVE')
+    queryset = CourtType.objects.all()
     serializer_class = CourtTypeSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'code']
@@ -149,6 +149,7 @@ class CourtViewSet(viewsets.ModelViewSet):
             'date': booking_date.isoformat(),
             'court_type_id': court_type.id,
             'court_type_name': court_type.name,
+            'court_type_code': court_type.code,
             'data': court_data
         }
 
