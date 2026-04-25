@@ -1,66 +1,45 @@
 from django.core.management.base import BaseCommand
 from user.models import CourtType, Court, PriceTable, PriceTableTimeSlot, Customer, Booking
-from datetime import date, time
-
+from datetime import date, time, timedelta
 
 class Command(BaseCommand):
     help = 'Populate sample data for testing court booking system'
 
     def handle(self, *args, **options):
-        # Create court types
-        court_type1, created = CourtType.objects.get_or_create(
-            code='CT001',
-            defaults={
-                'name': 'Sân bóng chuyền',
-                'duration': 60,
-                'status': 'ACTIVE'
-            }
-        )
-        if created:
-            self.stdout.write(self.style.SUCCESS(f'Created court type: {court_type1.name}'))
-
-        court_type2, created = CourtType.objects.get_or_create(
-            code='CT002',
-            defaults={
-                'name': 'Sân bóng đá',
-                'duration': 90,
-                'status': 'ACTIVE'
-            }
-        )
-        if created:
-            self.stdout.write(self.style.SUCCESS(f'Created court type: {court_type2.name}'))
-
-        # Create courts
-        courts = []
-        for i in range(1, 4):
-            court, created = Court.objects.get_or_create(
-                code=f'S{i:03d}',
-                defaults={
-                    'name': f'Sân {i}',
-                    'court_type': court_type1,
-                    'area': f'Khu A{i}',
-                    'status': 'READY'
-                }
+        # 1. Create court types
+        types_data = [
+            {'code': 'CT001', 'name': 'San bong chuyen'},
+            {'code': 'CT002', 'name': 'San bong da'},
+        ]
+        
+        court_types = {}
+        for td in types_data:
+            ct, created = CourtType.objects.get_or_create(
+                code=td['code'],
+                defaults={'name': td['name'], 'status': 'ACTIVE'}
             )
-            courts.append(court)
+            court_types[td['code']] = ct
             if created:
-                self.stdout.write(self.style.SUCCESS(f'Created court: {court.name}'))
+                self.stdout.write(f'Created court type: {td["code"]}')
 
-        # Create price table
-        price_table, created = PriceTable.objects.get_or_create(
-            price_table_code='BG001',
-            defaults={
-                'price_table_name': 'Bảng giá sân bóng chuyền ngày thường',
-                'court_type': court_type1,
-                'apply_scope': 'ALL',
-                'effective_date': date.today(),
-                'applied_days': ['T2', 'T3', 'T4', 'T5', 'T6']
-            }
-        )
-        if created:
-            self.stdout.write(self.style.SUCCESS(f'Created price table: {price_table.price_table_name}'))
+        # 2. Create courts for each type
+        for code, ct in court_types.items():
+            for i in range(1, 4):
+                court_code = f"{code}-S{i:02d}"
+                court, created = Court.objects.get_or_create(
+                    code=court_code,
+                    defaults={
+                        'name': f'{ct.name} - San {i}',
+                        'court_type': ct,
+                        'area': f'Khu {code[-1]}',
+                        'status': 'READY'
+                    }
+                )
+                if created:
+                    self.stdout.write(f'Created court: {court_code}')
 
-        # Create time slots
+        # 3. Create price tables and slots for each type
+        days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
         time_slots_data = [
             {'start': '07:00', 'end': '08:00', 'price': 100000},
             {'start': '08:00', 'end': '09:00', 'price': 120000},
@@ -71,62 +50,46 @@ class Command(BaseCommand):
             {'start': '14:00', 'end': '15:00', 'price': 120000},
             {'start': '15:00', 'end': '16:00', 'price': 120000},
             {'start': '16:00', 'end': '17:00', 'price': 100000},
+            {'start': '17:00', 'end': '18:00', 'price': 130000},
+            {'start': '18:00', 'end': '19:00', 'price': 150000},
+            {'start': '19:00', 'end': '20:00', 'price': 150000},
+            {'start': '20:00', 'end': '21:00', 'price': 130000},
         ]
 
-        for i, slot_data in enumerate(time_slots_data, 1):
-            slot, created = PriceTableTimeSlot.objects.get_or_create(
-                price_table=price_table,
-                start_time=time.fromisoformat(slot_data['start']),
-                end_time=time.fromisoformat(slot_data['end']),
+        for code, ct in court_types.items():
+            pt_code = f"BG-{code}"
+            price_table, created = PriceTable.objects.get_or_create(
+                price_table_code=pt_code,
                 defaults={
-                    'unit_price': slot_data['price'],
-                    'order': i
+                    'price_table_name': f'Bang gia {code} tong hop',
+                    'court_type': ct,
+                    'apply_scope': 'ALL',
+                    'effective_date': date.today() - timedelta(days=30),
+                    'applied_days': days
                 }
             )
             if created:
-                self.stdout.write(self.style.SUCCESS(
-                    f'Created time slot: {slot.start_time} - {slot.end_time} ({slot.unit_price} VND)'
-                ))
+                self.stdout.write(f'Created price table: {pt_code}')
 
-        # Create sample customers
-        customers = []
-        for i in range(1, 4):
-            customer, created = Customer.objects.get_or_create(
-                phone_number=f'090000000{i}',
-                defaults={
-                    'full_name': f'Khách hàng {i}',
-                    'email': f'customer{i}@example.com'
-                }
-            )
-            customers.append(customer)
-            if created:
-                self.stdout.write(self.style.SUCCESS(f'Created customer: {customer.full_name}'))
-
-        # Create sample bookings
-        for i, customer in enumerate(customers):
-            court = courts[i % len(courts)]
-            # Book first 2 slots for each customer
-            slots = PriceTableTimeSlot.objects.filter(price_table=price_table)[:2]
-
-            for slot in slots:
-                booking, created = Booking.objects.get_or_create(
-                    court=court,
-                    date=date.today(),
-                    start_time=slot.start_time,
-                    end_time=slot.end_time,
+            for i, slot_data in enumerate(time_slots_data, 1):
+                PriceTableTimeSlot.objects.get_or_create(
+                    price_table=price_table,
+                    start_time=time.fromisoformat(slot_data['start']),
+                    end_time=time.fromisoformat(slot_data['end']),
                     defaults={
-                        'customer_name': customer.full_name,
-                        'phone': customer.phone_number,
-                        'total_price': slot.unit_price,
-                        'status': 'confirmed'
+                        'unit_price': slot_data['price'] if code == 'CT001' else slot_data['price'] + 50000,
+                        'order': i
                     }
                 )
-                if created:
-                    self.stdout.write(self.style.SUCCESS(
-                        f'Created booking: {customer.full_name} - {court.name} - {slot.start_time}-{slot.end_time}'
-                    ))
 
-        self.stdout.write(self.style.SUCCESS('Sample data populated successfully!'))
-        self.stdout.write(self.style.SUCCESS('You can now test the API at:'))
-        self.stdout.write(self.style.SUCCESS('GET /api/courts/schedule/?date=2026-04-03&court_type_id=1'))
-        self.stdout.write(self.style.SUCCESS('POST /api/bookings/create_booking/'))
+        # 4. Create sample customers
+        for i in range(1, 4):
+            Customer.objects.get_or_create(
+                phone_number=f'091234567{i}',
+                defaults={
+                    'full_name': f'Khach hang {i}',
+                    'email': f'user{i}@example.com'
+                }
+            )
+
+        self.stdout.write('Sample data populated successfully!')

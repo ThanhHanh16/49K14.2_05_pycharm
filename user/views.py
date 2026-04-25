@@ -122,6 +122,7 @@ class CourtViewSet(viewsets.ModelViewSet):
 
             # Get time slots for this price table
             time_slots = PriceTableTimeSlot.objects.filter(
+                price_table=price_table
             ).order_by('order', 'start_time')
 
             slots_data = []
@@ -167,17 +168,17 @@ class CourtViewSet(viewsets.ModelViewSet):
             effective_date__lte=booking_date
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
-        # ).filter(
-        #     Q(applied_days__isnull=True) |
-        #     Q(applied_days__icontains=day_of_week) |
-        #     Q(applied_days__len=0)
+        ).filter(
+            Q(applied_days__isnull=True) |
+            Q(applied_days__icontains=day_of_week) |
+            Q(applied_days=[])
         ).order_by('-effective_date')
 
         return price_tables.first()
 
     def _get_day_of_week(self, date_obj):
         """Convert date to day of week string (T2, T3, ..., CN)"""
-        days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+        days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
         return days[date_obj.weekday()]
 
     def _get_slot_status(self, court, booking_date, start_time, end_time):
@@ -308,50 +309,56 @@ class BookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check if slot is already booked
-        existing_booking = Booking.objects.filter(
+        # Check for overlapping bookings in the requested range
+        existing_overlapping_booking = Booking.objects.filter(
             court=court,
             date=booking_date,
-            start_time=start_time,
-            end_time=end_time
+            start_time__lt=end_time,
+            end_time__gt=start_time
         ).exclude(status='cancelled').exists()
 
-        if existing_booking:
+        if existing_overlapping_booking:
             return Response(
-                {'error': 'This time slot is already booked'},
+                {'error': 'Một phần hoặc toàn bộ thời gian bạn chọn đã được đặt trước.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get price for this slot
+        # Get active price table
         price_table = self._get_active_price_table(court.court_type, booking_date)
         if not price_table:
             return Response(
-                {'error': 'No active price table found for this date'},
+                {'error': 'Không tìm thấy bảng giá áp dụng cho ngày này.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        time_slot = PriceTableTimeSlot.objects.filter(
+        # Get all time slots that fall within the requested range
+        time_slots = PriceTableTimeSlot.objects.filter(
             price_table=price_table,
-            start_time=start_time,
-            end_time=end_time
-        ).first()
+            start_time__gte=start_time,
+            end_time__lte=end_time
+        ).order_by('start_time')
 
-        if not time_slot:
+        if not time_slots.exists():
             return Response(
-                {'error': 'Invalid time slot for this court type'},
+                {'error': 'Khung giờ bạn chọn không hợp lệ hoặc không có trong bảng giá.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Create booking — dùng customer_name và phone từ form đặt sân
+        # Calculate total price and verify continuity (optional but good)
+        calculated_total_price = 0
+        for slot in time_slots:
+            calculated_total_price += slot.unit_price
+
+        # Create booking with calculated total price
         booking = Booking.objects.create(
             user=request.user,
             court=court,
-            customer_name=customer_name,
-            phone=phone,
+            customer_name=request.user.get_full_name() or request.user.username,
+            phone=getattr(request.user.customer_profile, 'phone', '') if hasattr(request.user, 'customer_profile') else '',
             date=booking_date,
             start_time=start_time,
             end_time=end_time,
-            total_price=time_slot.unit_price,
+            total_price=calculated_total_price,
             notes=notes,
             status='pending'
         )
@@ -370,10 +377,10 @@ class BookingViewSet(viewsets.ModelViewSet):
             effective_date__lte=booking_date
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
-        # ).filter(
-        #     Q(applied_days__isnull=True) |
-        #     Q(applied_days__icontains=day_of_week) |
-        #     Q(applied_days__len=0)
+        ).filter(
+            Q(applied_days__isnull=True) |
+            Q(applied_days__icontains=day_of_week) |
+            Q(applied_days=[])
         ).order_by('-effective_date')
 
         return price_tables.first()
