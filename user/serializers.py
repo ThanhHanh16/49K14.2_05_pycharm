@@ -299,6 +299,17 @@ class CourtScheduleResponseSerializer(serializers.Serializer):
 
 
 class QLDonDatSerializer(serializers.ModelSerializer):
+    # Expose "ma_don" thay vì "booking_code" để Android map đúng field
+    ma_don = serializers.CharField(source='booking_code', read_only=True)
+
     class Meta:
         model = QLDonDat
-        fields = '__all__'
+        fields = [
+            'id', 'booking', 'ma_don',
+            'ten_khach_hang', 'so_dien_thoai',
+            'gio_bat_dau', 'gio_ket_thuc',
+            'loai_san', 'san_ap_dung',
+            'ngay_dat', 'tong_tien',
+            'trang_thai_don', 'thanh_toan',
+            'ghi_chu', 'created_at', 'updated_at',
+        ]

@@ -331,10 +331,11 @@ class QLDonDat(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        # Nếu đã chọn booking thì tự đổ dữ liệu từ booking sang đơn đặt
+        is_new = self.pk is None
+
         if self.booking:
-            self.ten_khach_hang = self.booking.customer_name
-            self.so_dien_thoai = self.booking.phone
+            self.ten_khach_hang = self.booking.customer_name or ''
+            self.so_dien_thoai = self.booking.phone or ''
             self.gio_bat_dau = self.booking.start_time
             self.gio_ket_thuc = self.booking.end_time
             self.ngay_dat = self.booking.date
@@ -346,21 +347,36 @@ class QLDonDat(models.Model):
                 if self.booking.court.court_type:
                     self.loai_san = self.booking.court.court_type.name
 
-            # Nếu chưa có mã đơn thì tự sinh mã đơn
             if not self.booking_code:
                 count = QLDonDat.objects.count() + 1
                 self.booking_code = f"DD{count:05d}"
 
-            # Đồng bộ trạng thái đơn theo trạng thái booking
-            status_map = {
-                'pending': 'Chờ xác nhận',
-                'confirmed': 'Đã xác nhận',
-                'completed': 'Hoàn thành',
-                'cancelled': 'Hủy',
-            }
-            self.trang_thai_don = status_map.get(self.booking.status, 'Chờ xác nhận')
+            # Chỉ lấy trạng thái từ Booking khi tạo đơn mới
+            if is_new:
+                status_map = {
+                    'pending': 'Chờ xác nhận',
+                    'confirmed': 'Đã xác nhận',
+                    'completed': 'Hoàn thành',
+                    'cancelled': 'Hủy',
+                }
+                self.trang_thai_don = status_map.get(self.booking.status, 'Chờ xác nhận')
 
         super().save(*args, **kwargs)
 
+        # Sau khi lưu QLDonDat, đồng bộ ngược lại Booking
+        if self.booking:
+            reverse_status_map = {
+                'Chờ xác nhận': 'pending',
+                'Đã xác nhận': 'confirmed',
+                'Hoàn thành': 'completed',
+                'Hủy': 'cancelled',
+            }
+
+            new_booking_status = reverse_status_map.get(self.trang_thai_don)
+
+            if new_booking_status and self.booking.status != new_booking_status:
+                self.booking.status = new_booking_status
+                self.booking.save(update_fields=['status', 'updated_at'])
+
     def __str__(self):
-        return f"{self.ma_don} - {self.ten_khach_hang}"
+        return f"{self.booking_code} - {self.ten_khach_hang}"
