@@ -246,6 +246,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         Request body:
         {
             "court_id": 1,
+            "customer_name": "Nguyen Van A",
+            "phone": "0912345678",
             "date": "2026-04-03",
             "start_time": "07:00",
             "end_time": "08:00",
@@ -253,6 +255,11 @@ class BookingViewSet(viewsets.ModelViewSet):
         }
         """
         court_id = request.data.get('court_id') or request.data.get('court')
+        # Ưu tiên lấy tên và SĐT từ form nhập lúc đặt sân;
+        # chỉ fallback về tài khoản nếu không có
+        customer_name = (request.data.get('customer_name') or '').strip() or \
+                        request.user.get_full_name() or request.user.username
+        phone = (request.data.get('phone') or '').strip()
         date_str = request.data.get('date')
         start_time_str = request.data.get('start_time')
         end_time_str = request.data.get('end_time')
@@ -335,12 +342,12 @@ class BookingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Create booking
+        # Create booking — dùng customer_name và phone từ form đặt sân
         booking = Booking.objects.create(
             user=request.user,
             court=court,
-            customer_name=request.user.get_full_name() or request.user.username,
-            phone=request.user.customer_profile.phone,
+            customer_name=customer_name,
+            phone=phone,
             date=booking_date,
             start_time=start_time,
             end_time=end_time,
