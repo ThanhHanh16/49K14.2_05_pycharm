@@ -348,9 +348,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             notes=notes,
             status='pending'
         )
-        QLDonDat.objects.create(
-        booking=booking,
-        ma_don="")
+        QLDonDat.objects.create(booking=booking)
         serializer = BookingSerializer(booking)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -383,6 +381,6 @@ class QLDonDatViewSet(viewsets.ModelViewSet):
     queryset = QLDonDat.objects.all().order_by('-created_at')
     serializer_class = QLDonDatSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['ma_don', 'ten_khach_hang', 'so_dien_thoai']
+    search_fields = ['booking_code', 'ten_khach_hang', 'so_dien_thoai']
     ordering_fields = ['ngay_dat', 'created_at', 'trang_thai_don']
     permission_classes = [IsStaffOrAdmin]
