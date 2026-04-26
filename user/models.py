@@ -361,6 +361,10 @@ class QLDonDat(models.Model):
                 }
                 self.trang_thai_don = status_map.get(self.booking.status, 'Chờ xác nhận')
 
+        # Tự động cập nhật thanh toán khi đơn hoàn thành
+        if self.trang_thai_don == 'Hoàn thành':
+            self.thanh_toan = 'Đã thanh toán'
+
         super().save(*args, **kwargs)
 
         # Sau khi lưu QLDonDat, đồng bộ ngược lại Booking
