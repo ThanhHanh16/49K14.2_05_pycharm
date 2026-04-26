@@ -97,6 +97,32 @@ class PriceTableTimeSlotSerializer(serializers.ModelSerializer):
             'price_table': {'required': False}
         }
 
+    def validate(self, data):
+        start_time = data.get('start_time', self.instance.start_time if self.instance else None)
+        end_time = data.get('end_time', self.instance.end_time if self.instance else None)
+        
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError("Giờ kết thúc phải lớn hơn giờ bắt đầu.")
+            
+        price_table = data.get('price_table', self.instance.price_table if self.instance else None)
+        
+        if price_table and start_time and end_time:
+            overlaps = PriceTableTimeSlot.objects.filter(
+                price_table=price_table,
+                start_time__lt=end_time,
+                end_time__gt=start_time
+            )
+            if self.instance:
+                overlaps = overlaps.exclude(id=self.instance.id)
+                
+            if overlaps.exists():
+                overlap_slots = ", ".join([f"{slot.start_time.strftime('%H:%M')} - {slot.end_time.strftime('%H:%M')}" for slot in overlaps])
+                raise serializers.ValidationError(
+                    f"Khung giờ này ({start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}) bị trùng lặp với các khung giờ sau trong bảng giá: {overlap_slots}"
+                )
+                
+        return data
+
 
 class PriceTableSerializer(serializers.ModelSerializer):
     court_type_name = serializers.CharField(source='court_type.name', read_only=True)
@@ -135,6 +161,25 @@ class PriceTableSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
+        # Kiểm tra trùng lặp trong danh sách time_slots gửi lên
+        time_slots = data.get('time_slots', [])
+        for i, slot1 in enumerate(time_slots):
+            st1 = slot1.get('start_time')
+            et1 = slot1.get('end_time')
+            for j, slot2 in enumerate(time_slots):
+                if i != j:
+                    st2 = slot2.get('start_time')
+                    et2 = slot2.get('end_time')
+                    if st1 and et1 and st2 and et2:
+                        if st1 < et2 and st2 < et1:
+                            st1_str = st1.strftime('%H:%M') if hasattr(st1, 'strftime') else str(st1)
+                            et1_str = et1.strftime('%H:%M') if hasattr(et1, 'strftime') else str(et1)
+                            st2_str = st2.strftime('%H:%M') if hasattr(st2, 'strftime') else str(st2)
+                            et2_str = et2.strftime('%H:%M') if hasattr(et2, 'strftime') else str(et2)
+                            raise serializers.ValidationError(
+                                f"Các khung giờ bạn vừa nhập bị trùng lặp thời gian với nhau: {st1_str}-{et1_str} và {st2_str}-{et2_str}."
+                            )
+
         # Handle mapping for mapping-friendly fields from Android
         is_all_courts = data.get('is_all_courts')
         if is_all_courts is not None:
@@ -243,6 +288,77 @@ class PriceTableSerializer(serializers.ModelSerializer):
                 PriceTableCourt.objects.create(price_table=price_table, court_id=court_id)
             
         return price_table
+        
+    def update(self, instance, validated_data):
+        time_slots_data = validated_data.pop('time_slots', None)
+        is_all_courts = validated_data.pop('is_all_courts', None)
+        expiry_date = validated_data.pop('expiry_date', None)
+        court_ids = validated_data.pop('court_ids', None)
+
+        if is_all_courts is not None:
+            validated_data['apply_scope'] = 'ALL' if is_all_courts else 'SPECIFIC'
+            
+        if expiry_date is not None:
+            validated_data['end_date'] = expiry_date
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Cập nhật time_slots
+        if time_slots_data is not None:
+            # Lấy danh sách ID của time_slots được gửi lên (để giữ lại)
+            time_slot_ids = [item.get('id') for item in time_slots_data if item.get('id')]
+            
+            # Kiểm tra trùng lặp cho các slot sẽ được lưu
+            for idx, slot_data in enumerate(time_slots_data):
+                start_time = slot_data.get('start_time')
+                end_time = slot_data.get('end_time')
+                
+                if start_time and end_time:
+                    # Truy vấn các time slot khác TRONG database (những cái sẽ không bị xóa)
+                    # nhưng loại trừ chính nó (nếu nó đã có ID)
+                    other_slots_query = instance.time_slots.filter(
+                        id__in=time_slot_ids,
+                        start_time__lt=end_time,
+                        end_time__gt=start_time
+                    )
+                    
+                    if slot_data.get('id'):
+                         other_slots_query = other_slots_query.exclude(id=slot_data.get('id'))
+                         
+                    if other_slots_query.exists():
+                        overlap_slots = ", ".join([f"{slot.start_time.strftime('%H:%M')} - {slot.end_time.strftime('%H:%M')}" for slot in other_slots_query])
+                        raise serializers.ValidationError(
+                             f"Khung giờ ({start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}) bị trùng lặp với các khung giờ sau: {overlap_slots}"
+                        )
+            
+            # Xóa các time_slot không có trong danh sách gửi lên
+            instance.time_slots.exclude(id__in=time_slot_ids).delete()
+            
+            for slot_data in time_slots_data:
+                slot_id = slot_data.get('id')
+                if slot_id:
+                    # Cập nhật
+                    slot_instance = PriceTableTimeSlot.objects.get(id=slot_id, price_table=instance)
+                    for attr, value in slot_data.items():
+                        setattr(slot_instance, attr, value)
+                    slot_instance.save()
+                else:
+                    # Tạo mới
+                    PriceTableTimeSlot.objects.create(price_table=instance, **slot_data)
+
+        # Cập nhật applied_courts
+        if validated_data.get('apply_scope') == 'SPECIFIC' and court_ids is not None:
+            # Xóa các sân áp dụng hiện tại
+            instance.applied_courts.all().delete()
+            # Thêm sân áp dụng mới
+            for court_id in court_ids:
+                PriceTableCourt.objects.create(price_table=instance, court_id=court_id)
+        elif validated_data.get('apply_scope') == 'ALL':
+             instance.applied_courts.all().delete()
+
+        return instance
 
 
 class BookingSerializer(serializers.ModelSerializer):
