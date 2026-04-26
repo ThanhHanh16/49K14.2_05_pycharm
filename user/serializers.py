@@ -366,6 +366,7 @@ class BookingSerializer(serializers.ModelSerializer):
     court_code = serializers.CharField(source='court.code', read_only=True)
     total_price = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
     user = serializers.PrimaryKeyRelatedField(read_only=True)
+    order_id = serializers.PrimaryKeyRelatedField(source='order', read_only=True)
 
     class Meta:
         model = Booking
@@ -383,6 +384,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'total_price',
             'status',
             'notes',
+            'order_id',
             'created_at',
             'updated_at',
         ]
@@ -417,11 +419,12 @@ class CourtScheduleResponseSerializer(serializers.Serializer):
 class QLDonDatSerializer(serializers.ModelSerializer):
     # Expose "ma_don" thay vì "booking_code" để Android map đúng field
     ma_don = serializers.CharField(source='booking_code', read_only=True)
+    bookings = BookingSerializer(many=True, read_only=True)
 
     class Meta:
         model = QLDonDat
         fields = [
-            'id', 'booking', 'ma_don',
+            'id', 'ma_don', 'bookings',
             'ten_khach_hang', 'so_dien_thoai',
             'gio_bat_dau', 'gio_ket_thuc',
             'loai_san', 'san_ap_dung',
