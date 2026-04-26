@@ -115,13 +115,12 @@ class PriceTable(models.Model):
         verbose_name_plural = "Bang gia"
 
     def clean(self):
-        if self.end_date and self.end_date < self.effective_date:
-            raise ValidationError("Ngày kết thúc phải lớn hơn hoặc bằng ngày hiệu lực.")
-
-    def clean(self):
         from django.core.exceptions import ValidationError
         from django.db.models import Q
         
+        if self.end_date and self.end_date < self.effective_date:
+            raise ValidationError("Ngày kết thúc phải lớn hơn hoặc bằng ngày hiệu lực.")
+
         # 1. Base query for potential overlaps
         overlaps = PriceTable.objects.filter(court_type=self.court_type)
         if self.pk:
@@ -208,8 +207,23 @@ class PriceTableTimeSlot(models.Model):
         verbose_name_plural = "Khung gio bang gia"
 
     def clean(self):
-        if self.end_time <= self.start_time:
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
             raise ValidationError("Giờ kết thúc phải lớn hơn giờ bắt đầu.")
+            
+        if getattr(self, 'price_table_id', None) and self.start_time and self.end_time:
+            overlaps = PriceTableTimeSlot.objects.filter(
+                price_table_id=self.price_table_id,
+                start_time__lt=self.end_time,
+                end_time__gt=self.start_time
+            )
+            if self.pk:
+                overlaps = overlaps.exclude(pk=self.pk)
+            if overlaps.exists():
+                raise ValidationError("Khung giờ này bị trùng lặp với khung giờ khác trong cùng bảng giá.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.price_table.price_table_code} | {self.start_time} - {self.end_time}"
