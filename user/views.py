@@ -1,10 +1,12 @@
-from datetime import datetime
-
 from django.db.models import Q
+from django.contrib.auth import get_user_model
 from rest_framework import viewsets, filters, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth.hashers import make_password
+import random
+from django.core.mail import send_mail
 
 from accounts.permissions import IsCustomer, IsStaffOrAdmin
 from .models import (
@@ -18,6 +20,8 @@ from .serializers import (
     CourtScheduleResponseSerializer, QLDonDatSerializer
 )
 from rest_framework.permissions import BasePermission, SAFE_METHODS
+from datetime import datetime
+from accounts.models import CustomerProfile
 
 
 class IsStaffOrAdminOrReadOnly(BasePermission):
@@ -398,3 +402,69 @@ class QLDonDatViewSet(viewsets.ModelViewSet):
     search_fields = ['booking_code', 'ten_khach_hang', 'so_dien_thoai']
     ordering_fields = ['ngay_dat', 'created_at', 'trang_thai_don']
     permission_classes = [IsStaffOrAdmin]
+
+
+@api_view(['POST'])
+def forgot_password_api(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'detail': 'Email is required'}, status=400)
+    User = get_user_model()
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({'detail': 'User with this email does not exist'}, status=404)
+    otp = str(random.randint(100000, 999999))
+    # Note: PasswordResetOTP needs to be imported or handled if you use this code.
+    # PasswordResetOTP.objects.create(user=user, otp_code=otp)
+    send_mail(
+        'Mã khôi phục mật khẩu',
+        f'Mã OTP của bạn là: {otp}',
+        'from@example.com',
+        [email],
+        fail_silently=False,
+    )
+    return Response({'detail': 'OTP đã được gửi'})
+
+@api_view(['POST'])
+def reset_password_quick(request):
+    username = request.data.get('username')
+    email = request.data.get('email')
+    phone = request.data.get('phone')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+
+    if not all([username, email, phone, new_password, confirm_password]):
+        return Response({'detail': 'Vui lòng nhập đầy đủ thông tin'}, status=400)
+    if new_password != confirm_password:
+        return Response({'detail': 'Mật khẩu xác nhận không khớp'}, status=400)
+
+    User = get_user_model()
+    try:
+        # Check if the user exists with this username and email
+        user = User.objects.get(username=username, email=email)
+        
+        # In this project, Customer Profile is in accounts app (CustomerProfile),
+        # but there is also a Customer model in user app.
+        # Since Customer model in user.models doesn't have a direct 'user' Foreign Key,
+        # we filter by the 'phone_number' or 'email' provided.
+        # However, for authentication, checking if the given phone belongs to this user
+        # can be done via the CustomerProfile if they are connected, or just by verifying
+        # the phone matches a Customer record with the same email.
+        
+        # Check if there is a matching CustomerProfile
+        customer_profile = CustomerProfile.objects.filter(user=user, phone=phone).first()
+        
+        # Cập nhật: xoá phần logic tìm Customer qua `get(user=user)` bị sai
+        # Chỉ kiểm tra qua phone_number hoặc email của Model Customer (tuỳ nghiệp vụ)
+        customer = Customer.objects.filter(email=email, phone_number=phone).first()
+
+        if not customer and not customer_profile:
+             return Response({'detail': 'Thông tin xác thực sai (Số điện thoại không khớp).'}, status=400)
+
+        # Update password
+        user.password = make_password(new_password)
+        user.save()
+        return Response({'detail': 'Đổi mật khẩu thành công'})
+    except User.DoesNotExist:
+        return Response({'detail': 'Thông tin xác thực sai (Không tìm thấy tài khoản).'}, status=400)

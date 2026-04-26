@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CustomerViewSet, CourtTypeViewSet, CourtViewSet,
     PriceTableViewSet, PriceTableCourtViewSet,
-    PriceTableTimeSlotViewSet, BookingViewSet, QLDonDatViewSet
+    PriceTableTimeSlotViewSet, BookingViewSet, QLDonDatViewSet,
+    forgot_password_api, reset_password_quick
 )
 
 
@@ -19,4 +20,5 @@ router.register(r'QL_DonDat', QLDonDatViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('reset-password/', reset_password_quick, name='reset-password'),
 ]
