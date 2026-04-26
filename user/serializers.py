@@ -57,7 +57,6 @@ class CourtSerializer(serializers.ModelSerializer):
             'area',
             'status',
             'created_at',
-            'updated_at',
         ]
         extra_kwargs = {
             'code': {'required': False}
