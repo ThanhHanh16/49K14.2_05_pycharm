@@ -264,6 +264,14 @@ class Booking(models.Model):
         verbose_name="Trạng thái"
     )
     notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    order = models.ForeignKey(
+        'QLDonDat',
+        on_delete=models.CASCADE,
+        related_name='bookings',
+        null=True,
+        blank=True,
+        verbose_name="Đơn hàng"
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
@@ -295,16 +303,7 @@ class QLDonDat(models.Model):
         ('Chưa thanh toán', 'Chưa thanh toán'),
     ]
 
-    # THÊM MỚI: liên kết với Booking
-    booking = models.OneToOneField(
-        Booking,
-        on_delete=models.CASCADE,
-        related_name='qldon_dat',
-        null=True,
-        blank=True,
-        verbose_name="Đặt sân"
-    )
-
+    # Đơn hàng tổng cho nhiều khung giờ
     booking_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã đơn đặt")
     ten_khach_hang = models.CharField(max_length=100, verbose_name="Tên khách hàng")
     so_dien_thoai = models.CharField(max_length=20, verbose_name="Số điện thoại")
@@ -338,54 +337,30 @@ class QLDonDat(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
 
-        if self.booking:
-            self.ten_khach_hang = self.booking.customer_name or ''
-            self.so_dien_thoai = self.booking.phone or ''
-            self.gio_bat_dau = self.booking.start_time
-            self.gio_ket_thuc = self.booking.end_time
-            self.ngay_dat = self.booking.date
-            self.tong_tien = self.booking.total_price or 0
-            self.ghi_chu = self.booking.notes
+        if not self.booking_code:
+            count = QLDonDat.objects.count() + 1
+            self.booking_code = f"DD{count:05d}"
 
-            if self.booking.court:
-                self.san_ap_dung = self.booking.court.name
-                if self.booking.court.court_type:
-                    self.loai_san = self.booking.court.court_type.name
-
-            if not self.booking_code:
-                count = QLDonDat.objects.count() + 1
-                self.booking_code = f"DD{count:05d}"
-
-            # Chỉ lấy trạng thái từ Booking khi tạo đơn mới
-            if is_new:
-                status_map = {
-                    'pending': 'Chờ xác nhận',
-                    'confirmed': 'Đã xác nhận',
-                    'completed': 'Hoàn thành',
-                    'cancelled': 'Hủy',
-                }
-                self.trang_thai_don = status_map.get(self.booking.status, 'Chờ xác nhận')
-
+        # Lưu thông tin cơ bản
         # Tự động cập nhật thanh toán khi đơn hoàn thành
         if self.trang_thai_don == 'Hoàn thành':
             self.thanh_toan = 'Đã thanh toán'
 
         super().save(*args, **kwargs)
 
-        # Sau khi lưu QLDonDat, đồng bộ ngược lại Booking
-        if self.booking:
-            reverse_status_map = {
-                'Chờ xác nhận': 'pending',
-                'Đã xác nhận': 'confirmed',
-                'Hoàn thành': 'completed',
-                'Hủy': 'cancelled',
-            }
+        # Sau khi lưu QLDonDat, đồng bộ ngược lại các Bookings nếu cần
+        # (Ví dụ: khi đổi trạng thái đơn hàng tổng thì đổi hết các booking con)
+        reverse_status_map = {
+            'Chờ xác nhận': 'pending',
+            'Đã xác nhận': 'confirmed',
+            'Hoàn thành': 'completed',
+            'Hủy': 'cancelled',
+        }
 
-            new_booking_status = reverse_status_map.get(self.trang_thai_don)
+        new_booking_status = reverse_status_map.get(self.trang_thai_don)
 
-            if new_booking_status and self.booking.status != new_booking_status:
-                self.booking.status = new_booking_status
-                self.booking.save(update_fields=['status', 'updated_at'])
+        if new_booking_status:
+            self.bookings.exclude(status=new_booking_status).update(status=new_booking_status)
 
     def __str__(self):
         return f"{self.booking_code} - {self.ten_khach_hang}"

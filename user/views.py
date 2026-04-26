@@ -111,8 +111,10 @@ class CourtViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get courts for this court type
-        courts = Court.objects.filter(court_type=court_type).prefetch_related('bookings')
+        # Get courts for this court type (excluding INACTIVE)
+        courts = Court.objects.filter(
+            court_type=court_type
+        ).exclude(status='INACTIVE').prefetch_related('bookings')
 
         court_data = []
 
@@ -247,127 +249,145 @@ class BookingViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def create_booking(self, request):
         """
-        Create a new booking
+        Create a new booking order with one or more time slots.
         Request body:
         {
             "court_id": 1,
             "customer_name": "Nguyen Van A",
             "phone": "0912345678",
             "date": "2026-04-03",
-            "start_time": "07:00",
-            "end_time": "08:00",
-            "notes": "Optional notes"
+            "notes": "Optional notes",
+            "slots": [  // Optional: List of slots for multi-slot booking
+                {"start_time": "07:00", "end_time": "08:00"},
+                {"start_time": "12:00", "end_time": "13:00"}
+            ],
+            "start_time": "07:00", // Fallback for single slot
+            "end_time": "08:00"    // Fallback for single slot
         }
         """
         court_id = request.data.get('court_id') or request.data.get('court')
-        # Ưu tiên lấy tên và SĐT từ form nhập lúc đặt sân;
-        # chỉ fallback về tài khoản nếu không có
         customer_name = (request.data.get('customer_name') or '').strip() or \
                         request.user.get_full_name() or request.user.username
         phone = (request.data.get('phone') or '').strip()
         date_str = request.data.get('date')
-        start_time_str = request.data.get('start_time')
-        end_time_str = request.data.get('end_time')
         notes = request.data.get('notes', '')
+        
+        # Prepare slots list
+        slots_data = request.data.get('slots', [])
+        if not slots_data:
+            start_time_str = request.data.get('start_time')
+            end_time_str = request.data.get('end_time')
+            if start_time_str and end_time_str:
+                slots_data = [{'start_time': start_time_str, 'end_time': end_time_str}]
 
-        missing_fields = []
-        if not court_id:
-            missing_fields.append('court_id')
-        if not date_str:
-            missing_fields.append('date')
-        if not start_time_str:
-            missing_fields.append('start_time')
-        if not end_time_str:
-            missing_fields.append('end_time')
-
-        if missing_fields:
+        # Validations
+        if not court_id or not date_str or not slots_data:
             return Response(
-                {'error': f'Missing required fields: {", ".join(missing_fields)}'},
+                {'error': 'Missing required fields: court_id, date, or slots'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
             court = Court.objects.get(id=court_id)
             booking_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            
-            # Linh hoạt xử lý HH:MM hoặc HH:MM:SS
-            try:
-                start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
-            except ValueError:
-                start_time = datetime.strptime(start_time_str, '%H:%M').time()
-                
-            try:
-                end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
-            except ValueError:
-                end_time = datetime.strptime(end_time_str, '%H:%M').time()
         except (Court.DoesNotExist, ValueError) as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if court is available
         if court.status == 'MAINTENANCE':
-            return Response(
-                {'error': 'Court is under maintenance'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'Sân đang bảo trì, không thể đặt.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check for overlapping bookings in the requested range
-        existing_overlapping_booking = Booking.objects.filter(
-            court=court,
-            date=booking_date,
-            start_time__lt=end_time,
-            end_time__gt=start_time
-        ).exclude(status='cancelled').exists()
+        if court.status == 'INACTIVE':
+            return Response({'error': 'Sân đã ngừng hoạt động, không thể đặt.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if existing_overlapping_booking:
-            return Response(
-                {'error': 'Một phần hoặc toàn bộ thời gian bạn chọn đã được đặt trước.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Get active price table
-        price_table = self._get_active_price_table(court.court_type, booking_date)
-        if not price_table:
-            return Response(
-                {'error': 'Không tìm thấy bảng giá áp dụng cho ngày này.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Get all time slots that fall within the requested range
-        time_slots = PriceTableTimeSlot.objects.filter(
-            price_table=price_table,
-            start_time__gte=start_time,
-            end_time__lte=end_time
-        ).order_by('start_time')
-
-        if not time_slots.exists():
-            return Response(
-                {'error': 'Khung giờ bạn chọn không hợp lệ hoặc không có trong bảng giá.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Calculate total price and verify continuity (optional but good)
-        calculated_total_price = 0
-        for slot in time_slots:
-            calculated_total_price += slot.unit_price
-
-        # Create booking with calculated total price
-        booking = Booking.objects.create(
-            user=request.user,
-            court=court,
-            customer_name=request.user.get_full_name() or request.user.username,
-            phone=getattr(request.user.customer_profile, 'phone', '') if hasattr(request.user, 'customer_profile') else '',
-            date=booking_date,
-            start_time=start_time,
-            end_time=end_time,
-            total_price=calculated_total_price,
-            notes=notes,
-            status='pending'
+        # Create the Order record first
+        order = QLDonDat.objects.create(
+            ten_khach_hang=customer_name,
+            so_dien_thoai=phone,
+            ngay_dat=booking_date,
+            ghi_chu=notes,
+            trang_thai_don='Chờ xác nhận',
+            loai_san=court.court_type.name,
+            san_ap_dung=court.name,
+            tong_tien=0, # Will update after creating bookings
+            gio_bat_dau="00:00", # Placeholder
+            gio_ket_thuc="00:00"  # Placeholder
         )
-        QLDonDat.objects.create(booking=booking)
-        serializer = BookingSerializer(booking)
+
+        total_price = 0
+        min_start = None
+        max_end = None
+        created_bookings = []
+
+        try:
+            for slot in slots_data:
+                s_time_str = slot.get('start_time')
+                e_time_str = slot.get('end_time')
+                
+                # Parse times
+                try:
+                    s_time = datetime.strptime(s_time_str, '%H:%M:%S').time()
+                except ValueError:
+                    s_time = datetime.strptime(s_time_str, '%H:%M').time()
+                    
+                try:
+                    e_time = datetime.strptime(e_time_str, '%H:%M:%S').time()
+                except ValueError:
+                    e_time = datetime.strptime(e_time_str, '%H:%M').time()
+
+                # Check overlap
+                if Booking.objects.filter(
+                    court=court, date=booking_date,
+                    start_time__lt=e_time, end_time__gt=s_time
+                ).exclude(status='cancelled').exists():
+                    raise ValueError(f"Khung giờ {s_time_str}-{e_time_str} đã bị trùng.")
+
+                # Get price
+                price_table = self._get_active_price_table(court.court_type, booking_date)
+                if not price_table:
+                    raise ValueError("Không tìm thấy bảng giá áp dụng.")
+
+                time_slots = PriceTableTimeSlot.objects.filter(
+                    price_table=price_table,
+                    start_time__gte=s_time, end_time__lte=e_time
+                )
+                if not time_slots.exists():
+                    raise ValueError(f"Khung giờ {s_time_str}-{e_time_str} không hợp lệ trong bảng giá.")
+
+                slot_price = sum(ts.unit_price for ts in time_slots)
+                
+                # Create Booking
+                booking = Booking.objects.create(
+                    user=request.user,
+                    court=court,
+                    customer_name=customer_name,
+                    phone=phone,
+                    date=booking_date,
+                    start_time=s_time,
+                    end_time=e_time,
+                    total_price=slot_price,
+                    notes=notes,
+                    status='pending',
+                    order=order
+                )
+                created_bookings.append(booking)
+                total_price += slot_price
+                
+                # Track min/max time
+                if min_start is None or s_time < min_start: min_start = s_time
+                if max_end is None or e_time > max_end: max_end = e_time
+
+            # Update Order with aggregated data
+            order.tong_tien = total_price
+            order.gio_bat_dau = min_start
+            order.gio_ket_thuc = max_end
+            order.save()
+
+        except ValueError as e:
+            # If any slot fails, delete the partially created order and bookings
+            order.delete() # Cascade delete will handle bookings
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = QLDonDatSerializer(order)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def _get_active_price_table(self, court_type, booking_date):
