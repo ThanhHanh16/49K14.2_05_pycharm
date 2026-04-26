@@ -1,7 +1,10 @@
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.conf import settings
+from django.contrib.auth import get_user_model
 
+
+User = get_user_model()
 
 class Customer(models.Model):
     customer_code = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Mã khách hàng")
@@ -73,20 +76,8 @@ class Court(models.Model):
     area = models.CharField(max_length=50, blank=True, null=True, verbose_name="Khu vực")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="READY", verbose_name="Trạng thái sân")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
-    def save(self, *args, **kwargs):
-        if not self.code:
-            last_court = Court.objects.all().order_by('id').last()
-            if not last_court:
-                new_id = 1
-            else:
-                new_id = last_court.id + 1
-            self.code = f"SAN{new_id:03d}"
-        super().save(*args, **kwargs)
 
-    def __str__(self):
-        return self.name
 
 
 class PriceTable(models.Model):
