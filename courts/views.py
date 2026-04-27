@@ -2,7 +2,7 @@ from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.db.models import Q
 
 from .models import CourtType, Court
@@ -93,13 +93,26 @@ class CourtViewSet(viewsets.ModelViewSet):
             ).exclude(status='cancelled'))
 
             for slot in time_slots:
-                slot_status = self._get_slot_status(court, slot.start_time, slot.end_time, day_bookings)
-                slots_data.append({
-                    'start_time': slot.start_time,
-                    'end_time': slot.end_time,
-                    'price': slot.unit_price,
-                    'status': slot_status
-                })
+                # Chia nhỏ khung giờ thành từng khoảng 1 tiếng
+                current_start = datetime.combine(booking_date, slot.start_time)
+                end_dt = datetime.combine(booking_date, slot.end_time)
+                
+                while current_start < end_dt:
+                    next_end = current_start + timedelta(hours=1)
+                    if next_end > end_dt:
+                        next_end = end_dt
+                    
+                    s_time = current_start.time()
+                    e_time = next_end.time()
+                    
+                    slot_status = self._get_slot_status(court, s_time, e_time, day_bookings)
+                    slots_data.append({
+                        'start_time': s_time.strftime('%H:%M:%S'),
+                        'end_time': e_time.strftime('%H:%M:%S'),
+                        'price': slot.unit_price,
+                        'status': slot_status
+                    })
+                    current_start = next_end
 
             court_data.append({
                 'court_id': court.id,
