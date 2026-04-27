@@ -26,98 +26,124 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def create_booking(self, request):
-        court_id = request.data.get('court_id')
+        # Hỗ trợ cả định dạng cũ (court_id, slots) và định dạng mới (booking_items)
         customer_name = request.data.get('customer_name')
         phone = request.data.get('phone')
         date_str = request.data.get('date')
-        slots_data = request.data.get('slots', [])
-
-        if not all([court_id, date_str, slots_data]):
-            return Response({'error': 'Vui lòng cung cấp đầy đủ thông tin (sân, ngày, khung giờ)'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        booking_items = request.data.get('booking_items')
+        
+        # Nếu không có booking_items, thử lấy theo định dạng cũ
+        if not booking_items:
+            court_id = request.data.get('court_id')
+            slots = request.data.get('slots', [])
+            if court_id and slots:
+                booking_items = [{'court_id': court_id, 'slots': slots}]
+        
+        if not all([date_str, booking_items]):
+            return Response({'error': 'Vui lòng cung cấp đầy đủ thông tin (ngày, danh sách sân/khung giờ)'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            court = Court.objects.get(id=court_id)
             booking_date = datetime.strptime(date_str, '%Y-%m-%d').date()
         except Exception as e:
-            return Response({'error': f'Dữ liệu sân hoặc ngày không hợp lệ: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Ngày không hợp lệ: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Parse slots and check for conflicts
-        parsed_slots = []
-        for slot in slots_data:
+        all_parsed_bookings = []
+        total_price = 0
+        court_names = set()
+        court_types = set()
+
+        for item in booking_items:
+            court_id = item.get('court_id')
+            slots_data = item.get('slots', [])
+            
+            if not court_id or not slots_data:
+                continue
+                
             try:
-                s_time = datetime.strptime(slot['start_time'], '%H:%M').time()
-                e_time = datetime.strptime(slot['end_time'], '%H:%M').time()
-                
-                # Kiểm tra trùng lịch ngay tại đây
-                if Booking.objects.filter(court=court, date=booking_date, start_time=s_time, end_time=e_time).exclude(status='cancelled').exists():
-                    return Response({'error': f'Khung giờ {slot["start_time"]} - {slot["end_time"]} đã có người đặt.'}, status=status.HTTP_400_BAD_REQUEST)
-                
-                parsed_slots.append((s_time, e_time))
-            except Exception as e:
-                return Response({'error': f'Định dạng giờ không hợp lệ: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+                court = Court.objects.get(id=court_id)
+            except Court.DoesNotExist:
+                return Response({'error': f'Sân ID {court_id} không tồn tại.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if not parsed_slots:
-            return Response({'error': 'Không có khung giờ nào được chọn.'}, status=status.HTTP_400_BAD_REQUEST)
+            court_names.add(court.name)
+            court_types.add(court.court_type.name)
 
-        # Tính toán giờ bắt đầu và kết thúc thực tế của đơn hàng
-        min_start = min(s[0] for s in parsed_slots)
-        max_end = max(s[1] for s in parsed_slots)
+            for slot in slots_data:
+                try:
+                    s_time = datetime.strptime(slot['start_time'], '%H:%M').time()
+                    e_time = datetime.strptime(slot['end_time'], '%H:%M').time()
+                    
+                    # Kiểm tra trùng lịch
+                    if Booking.objects.filter(court=court, date=booking_date, start_time=s_time, end_time=e_time).exclude(status='cancelled').exists():
+                        return Response({'error': f'Sân {court.name} vào khung giờ {slot["start_time"]} - {slot["end_time"]} đã có người đặt.'}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Tìm bảng giá phù hợp
+                    days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+                    day_of_week = days[booking_date.weekday()]
+                    
+                    price_table = PriceTable.objects.filter(
+                        court_type=court.court_type,
+                        effective_date__lte=booking_date
+                    ).filter(
+                        Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
+                    ).filter(
+                        Q(applied_days__icontains=day_of_week) | Q(applied_days=[])
+                    ).order_by('-effective_date').first()
+
+                    slot_price = 0
+                    if price_table:
+                        ts = PriceTableTimeSlot.objects.filter(
+                            price_table=price_table, 
+                            start_time__lte=s_time, 
+                            end_time__gte=e_time
+                        ).first()
+                        if ts:
+                            slot_price = ts.unit_price
+                    
+                    all_parsed_bookings.append({
+                        'court': court,
+                        'start_time': s_time,
+                        'end_time': e_time,
+                        'price': slot_price
+                    })
+                    total_price += slot_price
+                except Exception as e:
+                    return Response({'error': f'Dữ liệu khung giờ không hợp lệ cho sân {court.name}: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not all_parsed_bookings:
+            return Response({'error': 'Không có khung giờ nào được chọn hợp lệ.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Tính toán giờ bao quát của toàn đơn hàng
+        min_start = min(b['start_time'] for b in all_parsed_bookings)
+        max_end = max(b['end_time'] for b in all_parsed_bookings)
 
         # Tạo đơn hàng (Order)
         order = QLDonDat.objects.create(
             ten_khach_hang=customer_name or "Khách lẻ",
             so_dien_thoai=phone or "N/A",
             ngay_dat=booking_date,
-            loai_san=court.court_type.name,
-            san_ap_dung=court.name,
-            tong_tien=0,
+            loai_san=", ".join(sorted(list(court_types))),
+            san_ap_dung=", ".join(sorted(list(court_names))),
+            tong_tien=total_price,
             gio_bat_dau=min_start,
             gio_ket_thuc=max_end,
             trang_thai_don='Chờ xác nhận'
         )
 
-        total_price = 0
-        for s_time, e_time in parsed_slots:
-            # Tìm giá từ bảng giá
-            # Ưu tiên tìm bảng giá phù hợp nhất cho ngày hôm đó
-            days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
-            day_of_week = days[booking_date.weekday()]
-            
-            price_table = PriceTable.objects.filter(
-                court_type=court.court_type,
-                effective_date__lte=booking_date
-            ).filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=booking_date)
-            ).filter(
-                Q(applied_days__icontains=day_of_week) | Q(applied_days=[])
-            ).order_by('-effective_date').first()
-
-            slot_price = 0
-            if price_table:
-                ts = PriceTableTimeSlot.objects.filter(
-                    price_table=price_table, 
-                    start_time__lte=s_time, 
-                    end_time__gte=e_time
-                ).first()
-                if ts:
-                    slot_price = ts.unit_price
-
+        # Tạo các bản ghi Booking chi tiết
+        for b in all_parsed_bookings:
             Booking.objects.create(
                 user=request.user,
-                court=court,
+                court=b['court'],
                 customer_name=customer_name or "Khách lẻ",
                 phone=phone or "N/A",
                 date=booking_date,
-                start_time=s_time,
-                end_time=e_time,
-                total_price=slot_price,
+                start_time=b['start_time'],
+                end_time=b['end_time'],
+                total_price=b['price'],
                 order=order,
                 status='pending'
             )
-            total_price += slot_price
-
-        order.tong_tien = total_price
-        order.save()
         
         return Response(QLDonDatSerializer(order).data, status=status.HTTP_201_CREATED)
 

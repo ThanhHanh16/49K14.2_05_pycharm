@@ -60,8 +60,14 @@ class CourtViewSet(viewsets.ModelViewSet):
             time_slots = PriceTableTimeSlot.objects.filter(price_table=price_table).order_by('order', 'start_time')
             slots_data = []
 
+            # Lấy tất cả booking của sân này trong ngày này một lần duy nhất
+            day_bookings = list(Booking.objects.filter(
+                court=court, 
+                date=booking_date
+            ).exclude(status='cancelled'))
+
             for slot in time_slots:
-                slot_status = self._get_slot_status(court, booking_date, slot.start_time, slot.end_time)
+                slot_status = self._get_slot_status(court, slot.start_time, slot.end_time, day_bookings)
                 slots_data.append({
                     'start_time': slot.start_time,
                     'end_time': slot.end_time,
@@ -98,8 +104,13 @@ class CourtViewSet(viewsets.ModelViewSet):
             Q(applied_days__icontains=day_of_week) | Q(applied_days=[])
         ).order_by('-effective_date').first()
 
-    def _get_slot_status(self, court, booking_date, start_time, end_time):
+    def _get_slot_status(self, court, start_time, end_time, day_bookings):
         if court.status == 'MAINTENANCE': return 'maintenance'
-        if Booking.objects.filter(court=court, date=booking_date, start_time=start_time, end_time=end_time).exclude(status='cancelled').exists():
-            return 'booked'
+        
+        # Kiểm tra trùng lặp trong danh sách booking đã lấy
+        for b in day_bookings:
+            # Logic overlap: b.start < slot.end AND b.end > slot.start
+            if b.start_time < end_time and b.end_time > start_time:
+                return 'booked'
+                
         return 'available'
