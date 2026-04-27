@@ -39,6 +39,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'user.apps.UserConfig',
     'accounts.apps.AccountsConfig',
+    'customers.apps.CustomersConfig',
+    'courts.apps.CourtsConfig',
+    'pricing.apps.PricingConfig',
+    'bookings.apps.BookingsConfig',
     'rest_framework',
     'rest_framework.authtoken',
 ]
