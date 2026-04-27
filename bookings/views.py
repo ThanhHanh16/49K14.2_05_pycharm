@@ -45,8 +45,23 @@ class BookingViewSet(viewsets.ModelViewSet):
 
         try:
             booking_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            now_dt = timezone.localtime(timezone.now())
+            today = now_dt.date()
+            current_time = now_dt.time()
+
+            # 1. Chặn đặt sân trong quá khứ (Ngày)
+            if booking_date < today:
+                return Response({'error': 'Không thể đặt sân cho ngày trong quá khứ.'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': f'Ngày không hợp lệ: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. Kiểm tra định dạng số điện thoại (10 số)
+        if phone:
+            clean_phone = "".join(filter(str.isdigit, phone))
+            if len(clean_phone) != 10:
+                return Response({'error': 'Số điện thoại không hợp lệ. Vui lòng nhập đúng 10 chữ số.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({'error': 'Vui lòng cung cấp số điện thoại.'}, status=status.HTTP_400_BAD_REQUEST)
 
         all_parsed_bookings = []
         total_price = 0
@@ -73,6 +88,10 @@ class BookingViewSet(viewsets.ModelViewSet):
                     s_time = datetime.strptime(slot['start_time'], '%H:%M').time()
                     e_time = datetime.strptime(slot['end_time'], '%H:%M').time()
                     
+                    # 3. Chặn đặt sân trong quá khứ (Giờ - Nếu là ngày hôm nay)
+                    if booking_date == today and s_time < current_time:
+                        return Response({'error': f'Khung giờ {slot["start_time"]} đã qua, không thể đặt.'}, status=status.HTTP_400_BAD_REQUEST)
+
                     # Kiểm tra trùng lịch
                     if Booking.objects.filter(court=court, date=booking_date, start_time=s_time, end_time=e_time).exclude(status='cancelled').exists():
                         return Response({'error': f'Sân {court.name} vào khung giờ {slot["start_time"]} - {slot["end_time"]} đã có người đặt.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -151,6 +170,31 @@ class QLDonDatViewSet(viewsets.ModelViewSet):
     queryset = QLDonDat.objects.all().order_by('-created_at')
     serializer_class = QLDonDatSerializer
     permission_classes = [IsStaffOrAdmin]
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        new_status = request.data.get('trang_thai_don')
+        
+        if not new_status:
+            return super().update(request, *args, **kwargs)
+
+        current_status = instance.trang_thai_don
+        
+        # Quy tắc: Một khi đã Hủy hoặc Hoàn thành thì không được đổi nữa
+        if current_status in ['Hoàn thành', 'HOÀN TẤT', 'Hủy', 'ĐÃ HỦY']:
+            return Response(
+                {'error': f'Đơn hàng đã ở trạng thái "{current_status}" và đã chốt sổ, không thể thay đổi thêm.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Quy tắc bổ sung: Không được nhảy cóc từ Chờ xác nhận sang Hoàn thành (phải qua Xác nhận)
+        if current_status == 'Chờ xác nhận' and new_status in ['Hoàn thành', 'HOÀN TẤT']:
+            return Response(
+                {'error': 'Đơn hàng cần được "Xác nhận" trước khi có thể chuyển sang "Hoàn thành".'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return super().update(request, *args, **kwargs)
 
 class DashboardStatsAPIView(APIView):
     permission_classes = [IsStaffOrAdmin]
