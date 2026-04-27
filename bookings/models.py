@@ -80,8 +80,8 @@ class QLDonDat(models.Model):
     so_dien_thoai = models.CharField(max_length=20, verbose_name="Số điện thoại")
     gio_bat_dau = models.TimeField(verbose_name="Giờ bắt đầu")
     gio_ket_thuc = models.TimeField(verbose_name="Giờ kết thúc")
-    loai_san = models.CharField(max_length=100, verbose_name="Loại sân")
-    san_ap_dung = models.CharField(max_length=100, verbose_name="Sân áp dụng")
+    loai_san = models.CharField(max_length=255, verbose_name="Loại sân")
+    san_ap_dung = models.CharField(max_length=255, verbose_name="Sân áp dụng")
     ngay_dat = models.DateField(verbose_name="Ngày đặt")
     tong_tien = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Tổng tiền")
     trang_thai_don = models.CharField(
