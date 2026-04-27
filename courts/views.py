@@ -28,6 +28,22 @@ class CourtTypeViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
     permission_classes = [IsStaffOrAdminOrReadOnly]
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Chặn xóa nếu có Sân thuộc loại này
+        if Court.objects.filter(court_type=instance).exists():
+            return Response(
+                {'error': f'Không thể xóa loại sân "{instance.name}" vì đang có các sân thuộc loại này. Hãy xóa hoặc đổi loại cho các sân đó trước.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # Chặn xóa nếu có Bảng giá thuộc loại này
+        if PriceTable.objects.filter(court_type=instance).exists():
+            return Response(
+                {'error': f'Không thể xóa loại sân "{instance.name}" vì đang có bảng giá áp dụng cho loại này.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
 class CourtViewSet(viewsets.ModelViewSet):
     queryset = Court.objects.all()
     serializer_class = CourtSerializer
@@ -35,6 +51,16 @@ class CourtViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
     ordering_fields = ['name', 'created_at']
     permission_classes = [IsStaffOrAdminOrReadOnly]
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Chặn xóa nếu sân này đã từng có lịch đặt (không tính đơn hủy)
+        if Booking.objects.filter(court=instance).exclude(status='cancelled').exists():
+            return Response(
+                {'error': f'Không thể xóa sân "{instance.name}" vì sân này đã từng có lịch đặt sân. Bạn nên chuyển trạng thái sân sang "Ngừng sử dụng" thay vì xóa.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
     def schedule(self, request):
