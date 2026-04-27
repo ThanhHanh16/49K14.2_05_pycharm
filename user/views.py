@@ -215,6 +215,21 @@ class PriceTableViewSet(viewsets.ModelViewSet):
     ordering_fields = ['effective_date', 'created_at']
     permission_classes = [IsStaffOrAdmin]
 
+    def destroy(self, request, *args, **kwargs):
+        """Allow deleting only future or expired price tables. Block currently active ones."""
+        instance = self.get_object()
+        today = datetime.now().date()
+        
+        is_active = instance.effective_date <= today and (instance.end_date is None or instance.end_date >= today)
+        
+        if is_active:
+            return Response(
+                {'error': 'Không thể xóa bảng giá đang trong thời gian hoạt động. Hãy chỉnh sửa ngày kết thúc nếu bạn muốn ngừng áp dụng.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        return super().destroy(request, *args, **kwargs)
+
 
 class PriceTableCourtViewSet(viewsets.ModelViewSet):
     queryset = PriceTableCourt.objects.all()
@@ -245,6 +260,21 @@ class BookingViewSet(viewsets.ModelViewSet):
         if user.is_staff or user.is_superuser:
             return Booking.objects.all().order_by('-date', '-created_at')
         return Booking.objects.filter(user=user).order_by('-date', '-created_at')
+
+    def destroy(self, request, *args, **kwargs):
+        """Soft delete: Change status to 'cancelled' instead of deleting from DB"""
+        instance = self.get_object()
+        if instance.status == 'completed':
+            return Response(
+                {'error': 'Không thể hủy khung giờ đã hoàn thành.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        instance.status = 'cancelled'
+        instance.save()
+        return Response(
+            {'message': 'Đã chuyển trạng thái khung giờ sang Đã hủy.'},
+            status=status.HTTP_200_OK
+        )
 
     @action(detail=False, methods=['post'])
     def create_booking(self, request):
@@ -281,9 +311,16 @@ class BookingViewSet(viewsets.ModelViewSet):
                 slots_data = [{'start_time': start_time_str, 'end_time': end_time_str}]
 
         # Validations
-        if not court_id or not date_str or not slots_data:
+        missing_fields = []
+        if not court_id: missing_fields.append('court_id')
+        if not date_str: missing_fields.append('date')
+        if not slots_data: missing_fields.append('slots')
+        if not request.data.get('customer_name'): missing_fields.append('customer_name')
+        if not request.data.get('phone'): missing_fields.append('phone')
+
+        if missing_fields:
             return Response(
-                {'error': 'Missing required fields: court_id, date, or slots'},
+                {'error': f'Thiếu thông tin bắt buộc: {", ".join(missing_fields)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -422,6 +459,23 @@ class QLDonDatViewSet(viewsets.ModelViewSet):
     search_fields = ['booking_code', 'ten_khach_hang', 'so_dien_thoai']
     ordering_fields = ['ngay_dat', 'created_at', 'trang_thai_don']
     permission_classes = [IsStaffOrAdmin]
+
+    def destroy(self, request, *args, **kwargs):
+        """Soft delete: Change status to 'Hủy' instead of deleting from DB"""
+        instance = self.get_object()
+        if instance.trang_thai_don == 'Hoàn thành':
+            return Response(
+                {'error': 'Không thể xóa đơn hàng đã hoàn thành để đảm bảo tính toàn vẹn của dữ liệu doanh thu.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        instance.trang_thai_don = 'Hủy'
+        instance.save()
+        # Lưu ý: Khi save QLDonDat, logic trong models.py sẽ tự động 
+        # đồng bộ trạng thái 'cancelled' xuống các Bookings con.
+        return Response(
+            {'message': 'Đã chuyển trạng thái đơn hàng sang Hủy.'},
+            status=status.HTTP_200_OK
+        )
 
 
 @api_view(['POST'])

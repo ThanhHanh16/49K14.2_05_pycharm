@@ -336,13 +336,11 @@ class QLDonDat(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
-
         if not self.booking_code:
             count = QLDonDat.objects.count() + 1
             self.booking_code = f"DD{count:05d}"
 
-        # Lưu thông tin cơ bản
-        # Tự động cập nhật thanh toán khi đơn hoàn thành
+        # Tự động chuyển trạng thái thanh toán nếu đơn đã Hoàn thành
         if self.trang_thai_don == 'Hoàn thành':
             self.thanh_toan = 'Đã thanh toán'
 
