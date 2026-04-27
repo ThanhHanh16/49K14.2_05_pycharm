@@ -160,11 +160,28 @@ class DashboardStatsAPIView(APIView):
         yesterday = today - timezone.timedelta(days=1)
         start_of_month = today.replace(day=1)
 
-        revenue_today = QLDonDat.objects.filter(ngay_dat=today, trang_thai_don='Hoàn thành').aggregate(total=Sum('tong_tien'))['total'] or 0
-        revenue_yesterday = QLDonDat.objects.filter(ngay_dat=yesterday, trang_thai_don='Hoàn thành').aggregate(total=Sum('tong_tien'))['total'] or 0
-        revenue_month = QLDonDat.objects.filter(ngay_dat__gte=start_of_month, trang_thai_don='Hoàn thành').aggregate(total=Sum('tong_tien'))['total'] or 0
+        # Doanh thu tính từ các đơn "Đã xác nhận" hoặc "Hoàn thành"
+        valid_statuses = ['Đã xác nhận', 'Hoàn thành', 'ĐÃ XÁC NHẬN', 'HOÀN TẤT']
         
-        revenue_by_court = QLDonDat.objects.filter(ngay_dat=today, trang_thai_don='Hoàn thành').values('san_ap_dung').annotate(revenue=Sum('tong_tien'))
+        revenue_today = QLDonDat.objects.filter(
+            ngay_dat=today, 
+            trang_thai_don__in=valid_statuses
+        ).aggregate(total=Sum('tong_tien'))['total'] or 0
+        
+        revenue_yesterday = QLDonDat.objects.filter(
+            ngay_dat=yesterday, 
+            trang_thai_don__in=valid_statuses
+        ).aggregate(total=Sum('tong_tien'))['total'] or 0
+        
+        revenue_month = QLDonDat.objects.filter(
+            ngay_dat__gte=start_of_month, 
+            trang_thai_don__in=valid_statuses
+        ).aggregate(total=Sum('tong_tien'))['total'] or 0
+        
+        revenue_by_court = QLDonDat.objects.filter(
+            ngay_dat=today, 
+            trang_thai_don__in=valid_statuses
+        ).values('san_ap_dung').annotate(revenue=Sum('tong_tien'))
 
         return Response({
             'revenue_today': revenue_today,
